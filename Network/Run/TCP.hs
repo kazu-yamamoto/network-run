@@ -25,7 +25,7 @@ runTCPClient host port client = withSocketsDo $ do
         return sock
 
 -- | Running a TCP server with an accepted socket and its peer name.
-runTCPServer :: String -> (Socket -> SockAddr -> IO aa) -> IO a
+runTCPServer :: String -> (Socket -> SockAddr -> IO a) -> IO a
 runTCPServer port server = withSocketsDo $ do
     addr <- resolve
     E.bracket (open addr) close loop
