@@ -40,8 +40,8 @@ runTCPServer port server = withSocketsDo $ do
         sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
         setSocketOption sock ReuseAddr 1
         withFdSocket sock $ setCloseOnExecIfNeeded
-        bind sock (addrAddress addr)
-        listen sock 10
+        bind sock $ addrAddress addr
+        listen sock 1024
         return sock
     loop sock = forever $ do
         (conn, peer) <- accept sock
