@@ -5,7 +5,8 @@ module Network.Run.TCP (
   , runTCPServer
   ) where
 
-import Control.Concurrent (forkFinally)
+import Control.Exception (catch, SomeException(..))
+import Control.Concurrent (forkFinally, threadDelay)
 import qualified Control.Exception as E
 import Control.Monad (forever, void)
 import Network.Socket
@@ -45,4 +46,8 @@ runTCPServer port server = withSocketsDo $ do
         return sock
     loop sock = forever $ do
         (conn, peer) <- accept sock
-        void $ forkFinally (server conn peer) (\_ -> close conn)
+        void $ forkFinally (server conn peer) (clear conn)
+    clear conn _ = do
+        shutdown conn ShutdownSend `E.catch` \(SomeException _) -> return ()
+        threadDelay 10000
+        close conn
