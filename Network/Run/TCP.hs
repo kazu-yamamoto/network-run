@@ -16,7 +16,7 @@ import qualified Network.Socket.ByteString as NSB
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPClient host port client = withSocketsDo $ do
     addr <- resolve
-    E.bracket (open addr) close client
+    E.bracket (open addr) gracefulClose client
   where
     resolve = do
         let hints = defaultHints { addrSocketType = Stream }
@@ -47,21 +47,23 @@ runTCPServer port server = withSocketsDo $ do
         return sock
     loop sock = forever $ do
         (conn, peer) <- accept sock
-        void $ forkFinally (server conn peer) (clear conn)
-    clear conn _ = gracefullShutdown `E.finally` close conn `E.catch` ignore
-      where
-        gracefullShutdown = do
-            -- Sending TCP FIN.
-            shutdown conn ShutdownSend
-            -- Waiting TCP FIN.
-            waitFIN
-        waitFIN = do
-            -- Don't use 4092 here.
-            -- The GHC runtime takes the global lock
-            -- if the length of ByteString is over 3276 bytes in 32bit
-            -- or 3272 bytes in 64bit.
-            bs <- NSB.recv conn 1024
-            when (bs /= "") waitFIN
-        -- shutdown sometime returns ENOTCONN.
-        -- Probably, we don't want to log this error.
-        ignore (E.SomeException _) = return ()
+        void $ forkFinally (server conn peer) (const $ gracefulClose conn)
+
+gracefulClose :: Socket -> IO ()
+gracefulClose conn = (sendRecvFIN `E.finally` close conn) `E.catch` ignore
+  where
+    sendRecvFIN = do
+        -- Sending TCP FIN.
+        shutdown conn ShutdownSend
+        -- Waiting TCP FIN.
+        recvFIN
+    recvFIN = do
+        -- Don't use 4092 here.
+        -- The GHC runtime takes the global lock
+        -- if the length of ByteString is over 3276 bytes in 32bit
+        -- or 3272 bytes in 64bit.
+        bs <- NSB.recv conn 1024
+        when (bs /= "") recvFIN
+    -- shutdown sometime returns ENOTCONN.
+    -- Probably, we don't want to log this error.
+    ignore (E.SomeException _) = return ()
