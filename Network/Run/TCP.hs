@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Simple functions to run TCP clients and servers.
 module Network.Run.TCP (
@@ -6,10 +7,10 @@ module Network.Run.TCP (
   ) where
 
 import Control.Concurrent (forkFinally)
-import Control.Exception (SomeException(..))
 import qualified Control.Exception as E
-import Control.Monad (forever, void)
+import Control.Monad (forever, void, when)
 import Network.Socket
+import qualified Network.Socket.ByteString as NSB
 
 -- | Running a TCP client with a connected socket.
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
@@ -47,6 +48,20 @@ runTCPServer port server = withSocketsDo $ do
     loop sock = forever $ do
         (conn, peer) <- accept sock
         void $ forkFinally (server conn peer) (clear conn)
-    clear conn _ = shutdown conn ShutdownSend `E.catch` ignore
+    clear conn _ = gracefullShutdown `E.finally` close conn `E.catch` ignore
       where
-        ignore (SomeException _) = return ()
+        gracefullShutdown = do
+            -- Sending TCP FIN.
+            shutdown conn ShutdownSend
+            -- Waiting TCP FIN.
+            waitFIN
+        waitFIN = do
+            -- Don't use 4092 here.
+            -- The GHC runtime takes the global lock
+            -- if the length of ByteString is over 3276 bytes in 32bit
+            -- or 3272 bytes in 64bit.
+            bs <- NSB.recv conn 1024
+            when (bs /= "") waitFIN
+        -- shutdown sometime returns ENOTCONN.
+        -- Probably, we don't want to log this error.
+        ignore (E.SomeException _) = return ()
