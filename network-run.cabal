@@ -17,6 +17,6 @@ library
   -- other-modules:
   -- other-extensions:
   build-depends:       base >= 4 && < 5
-                     , network
+                     , network >= 3.1.1
   -- hs-source-dirs:
   default-language:    Haskell2010
