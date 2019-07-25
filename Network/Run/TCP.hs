@@ -26,8 +26,8 @@ runTCPClient host port client = withSocketsDo $ do
         return sock
 
 -- | Running a TCP server with an accepted socket and its peer name.
-runTCPServer :: ServiceName -> (Socket -> SockAddr -> IO a) -> IO a
-runTCPServer port server = withSocketsDo $ do
+runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> SockAddr -> IO a) -> IO a
+runTCPServer mhost port server = withSocketsDo $ do
     addr <- resolve
     E.bracket (open addr) close loop
   where
@@ -36,7 +36,7 @@ runTCPServer port server = withSocketsDo $ do
                 addrFlags = [AI_PASSIVE]
               , addrSocketType = Stream
               }
-        head <$> getAddrInfo (Just hints) Nothing (Just port)
+        head <$> getAddrInfo (Just hints) mhost (Just port)
     open addr = do
         sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
         setSocketOption sock ReuseAddr 1
