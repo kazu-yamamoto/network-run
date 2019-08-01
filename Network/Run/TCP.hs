@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP #-}
 
 -- | Simple functions to run TCP clients and servers.
 module Network.Run.TCP (
@@ -15,7 +16,11 @@ import Network.Socket
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPClient host port client = withSocketsDo $ do
     addr <- resolve
+#if MIN_VERSION_network(3,1,1)
     E.bracket (open addr) (\sock -> gracefulClose sock 5000) client
+#else
+    E.bracket (open addr) close client
+#endif
   where
     resolve = do
         let hints = defaultHints { addrSocketType = Stream }
@@ -46,4 +51,8 @@ runTCPServer mhost port server = withSocketsDo $ do
         return sock
     loop sock = forever $ do
         (conn, peer) <- accept sock
+#if MIN_VERSION_network(3,1,1)
         void $ forkFinally (server conn peer) (const $ gracefulClose conn 5000)
+#else
+        void $ forkFinally (server conn peer) (const $ close conn)
+#endif
