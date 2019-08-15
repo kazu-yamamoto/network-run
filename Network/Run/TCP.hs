@@ -12,47 +12,28 @@ import qualified Control.Exception as E
 import Control.Monad (forever, void)
 import Network.Socket
 
+import Network.Run.Core
+
 -- | Running a TCP client with a connected socket.
-runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
-runTCPClient host port client = withSocketsDo $ do
-    addr <- resolve
-#if MIN_VERSION_network(3,1,1)
-    E.bracket (open addr) (\sock -> gracefulClose sock 5000) client
-#else
-    E.bracket (open addr) close client
-#endif
+runTCPClient :: String -> String -> (Socket -> IO a) -> IO a
+runTCPClient host port client = runClient Stream host port client'
   where
-    resolve = do
-        let hints = defaultHints { addrSocketType = Stream }
-        head <$> getAddrInfo (Just hints) (Just host) (Just port)
-    open addr = do
-        sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-        connect sock $ addrAddress addr
-        return sock
+    client' sock _peer = client sock
 
 -- | Running a TCP server with an accepted socket and its peer name.
-runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> SockAddr -> IO a) -> IO a
+runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPServer mhost port server = withSocketsDo $ do
-    addr <- resolve
+    addr <- resolve Stream mhost port True
     E.bracket (open addr) close loop
   where
-    resolve = do
-        let hints = defaultHints {
-                addrFlags = [AI_PASSIVE]
-              , addrSocketType = Stream
-              }
-        head <$> getAddrInfo (Just hints) mhost (Just port)
     open addr = do
-        sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-        setSocketOption sock ReuseAddr 1
-        withFdSocket sock $ setCloseOnExecIfNeeded
-        bind sock $ addrAddress addr
+        sock <- openServerSocket addr
         listen sock 1024
         return sock
     loop sock = forever $ do
-        (conn, peer) <- accept sock
+        (conn, _peer) <- accept sock
 #if MIN_VERSION_network(3,1,1)
-        void $ forkFinally (server conn peer) (const $ gracefulClose conn 5000)
+        void $ forkFinally (server conn) (const $ gracefulClose conn 5000)
 #else
-        void $ forkFinally (server conn peer) (const $ close conn)
+        void $ forkFinally (server conn) (const $ close conn)
 #endif
