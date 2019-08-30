@@ -14,7 +14,10 @@ import Network.Run.Core
 --   server's socket address.
 --   They should be used with 'sendTo'.
 runUDPClient :: String -> String -> (Socket -> SockAddr -> IO a) -> IO a
-runUDPClient = runClient Datagram
+runUDPClient host port client = withSocketsDo $ do
+    addr <- resolve Datagram (Just host) port False
+    let sockAddr = addrAddress addr
+    E.bracket (openSocket addr) close $ \sock -> client sock sockAddr
 
 -- | Running a UDP server with an open socket.
 runUDPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
