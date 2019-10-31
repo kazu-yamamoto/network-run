@@ -15,7 +15,7 @@ import Network.Socket
 import Network.Run.Core
 
 -- | Running a TCP client with a connected socket.
-runTCPClient :: String -> String -> (Socket -> IO a) -> IO a
+runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPClient host port client = withSocketsDo $ do
     addr <- resolve Stream (Just host) port False
 #if MIN_VERSION_network(3,1,1)

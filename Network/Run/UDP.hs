@@ -13,7 +13,7 @@ import Network.Run.Core
 --   The client action takes a socket and
 --   server's socket address.
 --   They should be used with 'sendTo'.
-runUDPClient :: String -> String -> (Socket -> SockAddr -> IO a) -> IO a
+runUDPClient :: HostName -> ServiceName -> (Socket -> SockAddr -> IO a) -> IO a
 runUDPClient host port client = withSocketsDo $ do
     addr <- resolve Datagram (Just host) port False
     let sockAddr = addrAddress addr
