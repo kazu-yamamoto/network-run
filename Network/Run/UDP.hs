@@ -32,13 +32,19 @@ runUDPServer mhost port server = withSocketsDo $ do
 
 -- | Running a UDP server with a connected socket in each Haskell thread.
 --   The first request is given to the server.
-runUDPServerFork :: Maybe HostName -> ServiceName -> (Socket -> ByteString -> IO a) -> IO a
-runUDPServerFork mhost port server = runUDPServer mhost port $ \lsock -> forever $ do
-    (bs0,peeraddr) <- recvFrom lsock 1024
+runUDPServerFork :: HostName -> ServiceName -> (Socket -> ByteString -> IO a) -> IO a
+runUDPServerFork host port server = runUDPServer (Just host) port $ \lsock -> forever $ do
+    (bs0,peeraddr) <- recvFrom lsock 2048
     let family = case peeraddr of
           SockAddrInet{}  -> AF_INET
           SockAddrInet6{} -> AF_INET6
           _                 -> error "family"
-    s <- socket family Datagram defaultProtocol
+        hints = defaultHints {
+            addrSocketType = Datagram
+          , addrFamily = family
+          , addrFlags = [AI_PASSIVE]
+          }
+    addr <- head <$> getAddrInfo (Just hints) Nothing (Just port)
+    s <- openServerSocket addr
     connect s peeraddr
     void $ forkFinally (server s bs0) (\_ -> close s)
