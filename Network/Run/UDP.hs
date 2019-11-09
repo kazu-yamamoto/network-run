@@ -5,7 +5,7 @@ module Network.Run.UDP (
   , runUDPServerFork
   ) where
 
-import Control.Concurrent (forkFinally)
+import Control.Concurrent (forkIO, forkFinally)
 import qualified Control.Exception as E
 import Control.Monad (forever, void)
 import Data.ByteString (ByteString)
@@ -32,19 +32,30 @@ runUDPServer mhost port server = withSocketsDo $ do
 
 -- | Running a UDP server with a connected socket in each Haskell thread.
 --   The first request is given to the server.
-runUDPServerFork :: HostName -> ServiceName -> (Socket -> ByteString -> IO a) -> IO a
-runUDPServerFork host port server = runUDPServer (Just host) port $ \lsock -> forever $ do
-    (bs0,peeraddr) <- recvFrom lsock 2048
-    let family = case peeraddr of
-          SockAddrInet{}  -> AF_INET
-          SockAddrInet6{} -> AF_INET6
-          _                 -> error "family"
-        hints = defaultHints {
-            addrSocketType = Datagram
-          , addrFamily = family
-          , addrFlags = [AI_PASSIVE]
-          }
-    addr <- head <$> getAddrInfo (Just hints) Nothing (Just port)
-    s <- openServerSocket addr
-    connect s peeraddr
-    void $ forkFinally (server s bs0) (\_ -> close s)
+--   Suppose that the server is serving on __addrS:portS__ and
+--   a client connects to the service from __addrC:portC__.
+--   A connected socket is created by binding to __*:portS__ and
+--   connecting to __addrC:portC__,
+--   resulting in __(UDP,addrS:portS,addrC:portC)__ where
+--   __addrS__ is given magically.
+runUDPServerFork :: [HostName] -> ServiceName -> (Socket -> ByteString -> IO ()) -> IO ()
+runUDPServerFork [] _ _ = return ()
+runUDPServerFork (h:hs) port server = do
+    mapM_ (forkIO . run) hs
+    run h
+  where
+    run host = runUDPServer (Just host) port $ \lsock -> forever $ do
+        (bs0,peeraddr) <- recvFrom lsock 2048
+        let family = case peeraddr of
+              SockAddrInet{}  -> AF_INET
+              SockAddrInet6{} -> AF_INET6
+              _                 -> error "family"
+            hints = defaultHints {
+                addrSocketType = Datagram
+              , addrFamily = family
+              , addrFlags = [AI_PASSIVE]
+              }
+        addr <- head <$> getAddrInfo (Just hints) Nothing (Just port)
+        s <- openServerSocket addr
+        connect s peeraddr
+        void $ forkFinally (server s bs0) (\_ -> close s)
