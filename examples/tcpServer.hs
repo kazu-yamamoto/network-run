@@ -2,7 +2,7 @@ module Main (main) where
 
 import Control.Monad (unless)
 import qualified Data.ByteString as S
-import Network.Run.TCP (runTCPClient)
+import Network.Run.TCP (runTCPServer)
 import Network.Socket.ByteString (recv, sendAll)
 
 main :: IO ()
