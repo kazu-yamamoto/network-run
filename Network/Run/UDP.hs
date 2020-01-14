@@ -38,6 +38,7 @@ runUDPServer mhost port server = withSocketsDo $ do
 --   connecting to __addrC:portC__,
 --   resulting in __(UDP,addrS:portS,addrC:portC)__ where
 --   __addrS__ is given magically.
+--   This approach is fragile due to NAT rebidings.
 runUDPServerFork :: [HostName] -> ServiceName -> (Socket -> ByteString -> IO ()) -> IO ()
 runUDPServerFork [] _ _ = return ()
 runUDPServerFork (h:hs) port server = do
