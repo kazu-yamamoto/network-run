@@ -7,6 +7,7 @@ module Network.Run.Core (
   , openServerSocket
   ) where
 
+import qualified Control.Exception as E
 import Network.Socket
 
 resolve :: SocketType -> Maybe HostName -> ServiceName -> Bool -> IO AddrInfo
@@ -22,8 +23,7 @@ openSocket :: AddrInfo -> IO Socket
 openSocket addr = socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
 
 openServerSocket :: AddrInfo -> IO Socket
-openServerSocket addr = do
-    sock <- openSocket addr
+openServerSocket addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     setSocketOption sock ReuseAddr 1
     withFdSocket sock $ setCloseOnExecIfNeeded
     bind sock $ addrAddress addr

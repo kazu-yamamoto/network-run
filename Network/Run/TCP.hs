@@ -24,8 +24,7 @@ runTCPClient host port client = withSocketsDo $ do
     E.bracket (open addr) close client
 #endif
   where
-    open addr = do
-        sock <- openSocket addr
+    open addr = E.bracketOnError (openSocket addr) close $ \sock -> do
         connect sock $ addrAddress addr
         return sock
 
@@ -35,14 +34,13 @@ runTCPServer mhost port server = withSocketsDo $ do
     addr <- resolve Stream mhost port True
     E.bracket (open addr) close loop
   where
-    open addr = do
-        sock <- openServerSocket addr
+    open addr = E.bracketOnError (openServerSocket addr) close $ \sock -> do
         listen sock 1024
         return sock
-    loop sock = forever $ do
-        (conn, _peer) <- accept sock
+    loop sock = forever $ E.bracketOnError (accept sock) (close . fst) $
+        \(conn, _peer) ->
 #if MIN_VERSION_network(3,1,1)
-        void $ forkFinally (server conn) (const $ gracefulClose conn 5000)
+          void $ forkFinally (server conn) (const $ gracefulClose conn 5000)
 #else
-        void $ forkFinally (server conn) (const $ close conn)
+          void $ forkFinally (server conn) (const $ close conn)
 #endif
