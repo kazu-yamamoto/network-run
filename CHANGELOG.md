@@ -1,5 +1,6 @@
 # Revision history for network-run
 
-## 0.0.0
+## 0.2.5
 
-* First version.
+* Making accept breakable on windows
+  [#2](https://github.com/kazu-yamamoto/network-run/pull/2)
