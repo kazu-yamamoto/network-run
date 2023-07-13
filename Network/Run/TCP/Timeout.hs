@@ -14,6 +14,7 @@ import qualified System.TimeManager as T
 
 import Network.Run.Core
 
+-- | A server type
 type TimeoutServer a =
     T.Manager
     -- ^ A global timeout manager
