@@ -1,11 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE CPP #-}
 
 -- | Simple functions to run TCP clients and servers.
 module Network.Run.TCP.Timeout (
-    runTCPServer
-  , TimeoutServer
-  ) where
+    runTCPServer,
+    TimeoutServer,
+) where
 
 import Control.Concurrent (forkFinally)
 import qualified Control.Exception as E
@@ -40,14 +39,10 @@ runTCPServer tm mhost port server = withSocketsDo $ do
     open addr = E.bracketOnError (openServerSocket addr) close $ \sock -> do
         listen sock 1024
         return sock
-    loop mgr sock = forever $ E.bracketOnError (accept sock) (close . fst) $
-        \(conn, _peer) ->
-#if MIN_VERSION_network(3,1,1)
-          void $ forkFinally (server' mgr conn) (const $ gracefulClose conn 5000)
-#else
-          void $ forkFinally (server' mgr conn) (const $ close conn)
-#endif
+    loop mgr sock = forever $
+        E.bracketOnError (accept sock) (close . fst) $
+            \(conn, _peer) ->
+                void $ forkFinally (server' mgr conn) (const $ gclose conn)
     server' mgr conn = do
         th <- T.registerKillThread mgr $ return ()
         server mgr th conn
-

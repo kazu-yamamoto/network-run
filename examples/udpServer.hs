@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Control.Monad (unless, forever, void)
+import Control.Monad (forever, unless, void)
 import qualified Data.ByteString as S
 import Network.Run.UDP (runUDPServer)
 import Network.Socket.ByteString (recvFrom, sendTo)

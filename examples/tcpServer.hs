@@ -11,5 +11,5 @@ main = runTCPServer Nothing "3000" talk
     talk s = do
         msg <- recv s 1024
         unless (S.null msg) $ do
-          sendAll s msg
-          talk s
+            sendAll s msg
+            talk s

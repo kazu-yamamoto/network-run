@@ -1,11 +1,11 @@
 -- | Simple functions to run UDP clients and servers.
 module Network.Run.UDP (
-    runUDPClient
-  , runUDPServer
-  , runUDPServerFork
-  ) where
+    runUDPClient,
+    runUDPServer,
+    runUDPServerFork,
+) where
 
-import Control.Concurrent (forkIO, forkFinally)
+import Control.Concurrent (forkFinally, forkIO)
 import qualified Control.Exception as E
 import Control.Monad (forever, void)
 import Data.ByteString (ByteString)
@@ -39,23 +39,25 @@ runUDPServer mhost port server = withSocketsDo $ do
 --   resulting in __(UDP,addrS:portS,addrC:portC)__ where
 --   __addrS__ is given magically.
 --   This approach is fragile due to NAT rebidings.
-runUDPServerFork :: [HostName] -> ServiceName -> (Socket -> ByteString -> IO ()) -> IO ()
+runUDPServerFork
+    :: [HostName] -> ServiceName -> (Socket -> ByteString -> IO ()) -> IO ()
 runUDPServerFork [] _ _ = return ()
-runUDPServerFork (h:hs) port server = do
+runUDPServerFork (h : hs) port server = do
     mapM_ (forkIO . run) hs
     run h
   where
     run host = runUDPServer (Just host) port $ \lsock -> forever $ do
-        (bs0,peeraddr) <- recvFrom lsock 2048
+        (bs0, peeraddr) <- recvFrom lsock 2048
         let family = case peeraddr of
-              SockAddrInet{}  -> AF_INET
-              SockAddrInet6{} -> AF_INET6
-              _                 -> error "family"
-            hints = defaultHints {
-                addrSocketType = Datagram
-              , addrFamily = family
-              , addrFlags = [AI_PASSIVE]
-              }
+                SockAddrInet{} -> AF_INET
+                SockAddrInet6{} -> AF_INET6
+                _ -> error "family"
+            hints =
+                defaultHints
+                    { addrSocketType = Datagram
+                    , addrFamily = family
+                    , addrFlags = [AI_PASSIVE]
+                    }
         addr <- head <$> getAddrInfo (Just hints) Nothing (Just port)
         s <- openServerSocket addr
         connect s peeraddr
