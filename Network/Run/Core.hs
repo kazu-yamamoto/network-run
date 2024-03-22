@@ -26,6 +26,13 @@ openSocket :: AddrInfo -> IO Socket
 openSocket addr = socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
 #endif
 
+-- | Open socket for server use
+--
+-- The socket is configured to
+--
+-- * allow reuse of local addresses (SO_REUSEADDR)
+-- * automatically be closed during a successful @execve@ (FD_CLOEXEC)
+-- * bind to the address specified
 openServerSocket :: AddrInfo -> IO Socket
 openServerSocket addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     setSocketOption sock ReuseAddr 1
