@@ -4,6 +4,9 @@
 module Network.Run.TCP.Timeout (
     runTCPServer,
     TimeoutServer,
+    -- * Generalized API
+    runTCPServerWithSocket,
+    openServerSocket,
 ) where
 
 import Control.Concurrent (forkFinally)
@@ -32,12 +35,28 @@ runTCPServer
     -> ServiceName
     -> TimeoutServer a
     -> IO a
-runTCPServer tm mhost port server = withSocketsDo $ do
+runTCPServer = runTCPServerWithSocket openServerSocket
+
+----------------------------------------------------------------
+-- Generalized API
+
+-- | Generalization of 'runTCPServer'
+--
+-- See 'Network.Run.TCP.runTCPServerWithSocket' for additional discussion.
+runTCPServerWithSocket
+    :: (AddrInfo -> IO Socket)
+    -> Int
+    -- ^ Timeout in second.
+    -> Maybe HostName
+    -> ServiceName
+    -> TimeoutServer a
+    -> IO a
+runTCPServerWithSocket initSocket tm mhost port server = withSocketsDo $ do
     T.withManager (tm * 1000000) $ \mgr -> do
         addr <- resolve Stream mhost port True
         E.bracket (open addr) close $ loop mgr
   where
-    open addr = E.bracketOnError (openServerSocket addr) close $ \sock -> do
+    open addr = E.bracketOnError (initSocket addr) close $ \sock -> do
         listen sock 1024
         return sock
     loop mgr sock = forever $
