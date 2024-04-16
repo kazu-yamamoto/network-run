@@ -4,8 +4,10 @@
 module Network.Run.TCP.Timeout (
     runTCPServer,
     TimeoutServer,
+
     -- * Generalized API
     runTCPServerWithSocket,
+    openClientSocket,
     openServerSocket,
 ) where
 
@@ -53,7 +55,7 @@ runTCPServerWithSocket
     -> IO a
 runTCPServerWithSocket initSocket tm mhost port server = withSocketsDo $ do
     T.withManager (tm * 1000000) $ \mgr -> do
-        addr <- resolve Stream mhost port True
+        addr <- resolve Stream mhost port [AI_PASSIVE]
         E.bracket (open addr) close $ loop mgr
   where
     open addr = E.bracketOnError (initSocket addr) close $ \sock -> do

@@ -4,6 +4,7 @@
 module Network.Run.Core (
     resolve,
     openSocket,
+    openClientSocket,
     openServerSocket,
     gclose,
 ) where
@@ -11,20 +12,31 @@ module Network.Run.Core (
 import qualified Control.Exception as E
 import Network.Socket
 
-resolve :: SocketType -> Maybe HostName -> ServiceName -> Bool -> IO AddrInfo
-resolve socketType mhost port passive =
+resolve
+    :: SocketType
+    -> Maybe HostName
+    -> ServiceName
+    -> [AddrInfoFlag]
+    -> IO AddrInfo
+resolve socketType mhost port flags =
     head <$> getAddrInfo (Just hints) mhost (Just port)
   where
     hints =
         defaultHints
             { addrSocketType = socketType
-            , addrFlags = if passive then [AI_PASSIVE] else []
+            , addrFlags = flags
             }
 
 #if !MIN_VERSION_network(3,1,2)
 openSocket :: AddrInfo -> IO Socket
 openSocket addr = socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
 #endif
+
+openClientSocket :: AddrInfo -> IO Socket
+openClientSocket ai = do
+    sock <- openSocket ai
+    connect sock $ addrAddress ai
+    return sock
 
 -- | Open socket for server use
 --

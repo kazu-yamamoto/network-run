@@ -20,12 +20,10 @@ import Network.Run.Core
 -- | Running a TCP client with a connected socket.
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPClient host port client = withSocketsDo $ do
-    addr <- resolve Stream (Just host) port False
+    addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
     E.bracket (open addr) gclose client
   where
-    open addr = E.bracketOnError (openSocket addr) close $ \sock -> do
-        connect sock $ addrAddress addr
-        return sock
+    open addr = E.bracketOnError (openClientSocket addr) close return
 
 -- | Running a TCP server with an accepted socket and its peer name.
 runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
@@ -48,7 +46,7 @@ runTCPServerWithSocket
     -- ^ Called for each incoming connection, in a new thread
     -> IO a
 runTCPServerWithSocket initSocket mhost port server = withSocketsDo $ do
-    addr <- resolve Stream mhost port True
+    addr <- resolve Stream mhost port [AI_PASSIVE]
     E.bracket (open addr) close loop
   where
     open addr = E.bracketOnError (initSocket addr) close $ \sock -> do
