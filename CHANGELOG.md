@@ -1,5 +1,9 @@
 # Revision history for network-run
 
+## 0.2.8
+
+* runTCPClient specifies AI_ADDRCONFIG.
+
 ## 0.2.7
 
 * Introduce `runTCPServerWithSocket`

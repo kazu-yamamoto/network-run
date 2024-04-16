@@ -1,5 +1,5 @@
 name:                network-run
-version:             0.2.7
+version:             0.2.8
 synopsis:            Simple network runner library
 description:         Simple functions to run network clients and servers.
 -- bug-reports:
