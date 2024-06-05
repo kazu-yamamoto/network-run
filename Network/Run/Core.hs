@@ -10,6 +10,7 @@ module Network.Run.Core (
 ) where
 
 import qualified Control.Exception as E
+import Control.Monad (when)
 import Network.Socket
 
 resolve
@@ -48,6 +49,9 @@ openClientSocket ai = do
 openServerSocket :: AddrInfo -> IO Socket
 openServerSocket addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     setSocketOption sock ReuseAddr 1
+#if !defined(openbsd_HOST_OS)
+    when (addrFamily addr == AF_INET6) $ setSocketOption sock IPv6Only 1
+#endif
     withFdSocket sock $ setCloseOnExecIfNeeded
     bind sock $ addrAddress addr
     return sock
