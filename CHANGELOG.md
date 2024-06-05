@@ -1,5 +1,10 @@
 # Revision history for network-run
 
+## 0.3.0
+
+* Specifying IPv6Only
+  [#4](https://github.com/kazu-yamamoto/network-run/pull/4)
+
 ## 0.2.8
 
 * runTCPClient specifies AI_ADDRCONFIG.
