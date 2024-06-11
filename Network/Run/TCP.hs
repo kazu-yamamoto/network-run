@@ -21,7 +21,7 @@ import Network.Run.Core
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPClient host port client = withSocketsDo $ do
     addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
-    E.bracket (open addr) gclose client
+    E.bracket (open addr) close client
   where
     open addr = E.bracketOnError (openClientSocket addr) close return
 
