@@ -1,5 +1,10 @@
 # Revision history for network-run
 
+## 0.3.1
+
+* Using close instead of gracefulClose for client
+  [#5](https://github.com/kazu-yamamoto/network-run/pull/5)
+
 ## 0.3.0
 
 * Specifying IPv6Only
