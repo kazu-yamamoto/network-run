@@ -5,7 +5,9 @@ module Network.Run.Core (
     resolve,
     openSocket,
     openClientSocket,
+    openClientSocketWithOptions,
     openServerSocket,
+    openServerSocketWithOptions,
     gclose,
     labelMe,
 ) where
@@ -35,25 +37,41 @@ openSocket :: AddrInfo -> IO Socket
 openSocket addr = socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
 #endif
 
+-- | This is the same as
+--
+-- > openClientSocketWithOptions []
 openClientSocket :: AddrInfo -> IO Socket
-openClientSocket ai = do
+openClientSocket = openClientSocketWithOptions []
+
+openClientSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
+openClientSocketWithOptions opts ai = do
     sock <- openSocket ai
+    mapM_ (uncurry $ setSocketOption sock) opts
     connect sock $ addrAddress ai
     return sock
 
 -- | Open socket for server use
 --
--- The socket is configured to
+-- This is the same as:
+--
+-- > openServerSocketWithOptions []
+openServerSocket :: AddrInfo -> IO Socket
+openServerSocket = openServerSocketWithOptions []
+
+-- | Open socket for server use, and set the provided options before binding.
+--
+-- In addition to the given options, the socket is configured to
 --
 -- * allow reuse of local addresses (SO_REUSEADDR)
 -- * automatically be closed during a successful @execve@ (FD_CLOEXEC)
 -- * bind to the address specified
-openServerSocket :: AddrInfo -> IO Socket
-openServerSocket addr = E.bracketOnError (openSocket addr) close $ \sock -> do
+openServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
+openServerSocketWithOptions opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     setSocketOption sock ReuseAddr 1
 #if !defined(openbsd_HOST_OS)
     when (addrFamily addr == AF_INET6) $ setSocketOption sock IPv6Only 1
 #endif
+    mapM_ (uncurry $ setSocketOption sock) opts
     withFdSocket sock $ setCloseOnExecIfNeeded
     bind sock $ addrAddress addr
     return sock
