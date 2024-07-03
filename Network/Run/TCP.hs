@@ -8,6 +8,7 @@ module Network.Run.TCP (
     -- * Generalized API
     runTCPServerWithSocket,
     openServerSocket,
+    runTCPServerWithListenSocket,
 ) where
 
 import Control.Concurrent (forkFinally)
@@ -47,12 +48,23 @@ runTCPServerWithSocket
     -> IO a
 runTCPServerWithSocket initSocket mhost port server = withSocketsDo $ do
     addr <- resolve Stream mhost port [AI_PASSIVE]
-    E.bracket (open addr) close loop
+    E.bracket (open addr) close $ \sock ->
+        runTCPServerWithListenSocket sock server
   where
     open addr = E.bracketOnError (initSocket addr) close $ \sock -> do
         listen sock 1024
         return sock
-    loop sock = forever $
+
+-- | Another generalization of 'runTCPServer'
+runTCPServerWithListenSocket
+    :: Socket
+    -- ^ A listen socket
+    -> (Socket -> IO a)
+    -- ^ Called for each incoming connection, in a new thread
+    -> IO a
+runTCPServerWithListenSocket sock server = withSocketsDo loop
+  where
+    loop = forever $ do
         E.bracketOnError (accept sock) (close . fst) $
             \(conn, _peer) ->
                 void $ forkFinally (server conn) (const $ gclose conn)

@@ -9,6 +9,7 @@ module Network.Run.TCP.Timeout (
     runTCPServerWithSocket,
     openClientSocket,
     openServerSocket,
+    runTCPServerWithListenSocket,
 ) where
 
 import Control.Concurrent (forkFinally)
@@ -54,14 +55,27 @@ runTCPServerWithSocket
     -> TimeoutServer a
     -> IO a
 runTCPServerWithSocket initSocket tm mhost port server = withSocketsDo $ do
-    T.withManager (tm * 1000000) $ \mgr -> do
-        addr <- resolve Stream mhost port [AI_PASSIVE]
-        E.bracket (open addr) close $ loop mgr
+    addr <- resolve Stream mhost port [AI_PASSIVE]
+    E.bracket (open addr) close $ \s ->
+        runTCPServerWithListenSocket tm s server
   where
     open addr = E.bracketOnError (initSocket addr) close $ \sock -> do
         listen sock 1024
         return sock
-    loop mgr sock = forever $
+
+-- | Another generalization of 'runTCPServer'
+runTCPServerWithListenSocket
+    :: Int
+    -- ^ Timeout in second.
+    -> Socket
+    -- ^ A listen socket
+    -> TimeoutServer a
+    -- ^ Called for each incoming connection, in a new thread
+    -> IO a
+runTCPServerWithListenSocket tm sock server = withSocketsDo $ do
+    T.withManager (tm * 1000000) loop
+  where
+    loop mgr = forever $
         E.bracketOnError (accept sock) (close . fst) $
             \(conn, _peer) ->
                 void $ forkFinally (server' mgr conn) (const $ gclose conn)
