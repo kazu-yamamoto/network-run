@@ -3,13 +3,11 @@
 -- | Simple functions to run TCP clients and servers.
 module Network.Run.TCP.Timeout (
     runTCPServer,
-    runTCPServerWithSocketOptions,
     TimeoutServer,
 
     -- * Generalized API
     runTCPServerWithSocket,
-    openClientSocket,
-    openClientSocketWithOptions,
+    runTCPServerWithSocketOptions,
     openServerSocket,
     openServerSocketWithOptions,
 ) where
