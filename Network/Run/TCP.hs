@@ -6,12 +6,14 @@ module Network.Run.TCP (
     runTCPServer,
 
     -- * Generalized API
-    runTCPClientWithSocket,
-    runTCPClientWithSocketOptions,
     runTCPServerWithSocket,
     runTCPServerWithSocketOptions,
     openServerSocket,
     openServerSocketWithOptions,
+    runTCPClientWithSocket,
+    runTCPClientWithSocketOptions,
+    openClientSocket,
+    openClientSocketWithOptions,
 ) where
 
 import Control.Concurrent (forkFinally)
