@@ -23,20 +23,7 @@ import Network.Socket
 
 import Network.Run.Core
 
--- | Running a TCP client with a connected socket.
---
--- This is the same as:
---
--- > runTCPClientWithSocketOptions []
-runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
-runTCPClient = runTCPClientWithSocket openClientSocket
-
--- | Running a TCP client with a connected socket.
---
--- Sets the given socket options before connecting.
-runTCPClientWithSocketOptions
-    :: [(SocketOption, Int)] -> HostName -> ServiceName -> (Socket -> IO a) -> IO a
-runTCPClientWithSocketOptions opts = runTCPClientWithSocket (openClientSocketWithOptions opts)
+----------------------------------------------------------------
 
 -- | Running a TCP server with an accepted socket and its peer name.
 --
@@ -54,8 +41,35 @@ runTCPServer mhost port server = withSocketsDo $ do
         listen sock 1024
         return sock
 
+-- | Running a TCP client with a connected socket for a given listen
+-- socket.
+runTCPServerWithSocket
+    :: Socket
+    -> (Socket -> IO a)
+    -- ^ Called for each incoming connection, in a new thread
+    -> IO a
+runTCPServerWithSocket sock server = withSocketsDo $
+    forever $
+        E.bracketOnError (accept sock) (close . fst) $
+            \(conn, _peer) ->
+                void $ forkFinally (labelMe "TCP server" >> server conn) (const $ gclose conn)
+
 ----------------------------------------------------------------
--- Generalized API
+
+-- | Running a TCP client with a connected socket.
+--
+-- This is the same as:
+--
+-- > runTCPClientWithSocketOptions []
+runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
+runTCPClient = runTCPClientWithSocket openClientSocket
+
+-- | Running a TCP client with a connected socket.
+--
+-- Sets the given socket options before connecting.
+runTCPClientWithSocketOptions
+    :: [(SocketOption, Int)] -> HostName -> ServiceName -> (Socket -> IO a) -> IO a
+runTCPClientWithSocketOptions opts = runTCPClientWithSocket (openClientSocketWithOptions opts)
 
 -- | Generalization of 'runTCPClient'
 runTCPClientWithSocket
@@ -72,16 +86,3 @@ runTCPClientWithSocket
 runTCPClientWithSocket initSocket host port client = withSocketsDo $ do
     addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
     E.bracket (initSocket addr) close client
-
--- | Running a TCP client with a connected socket for a given listen
--- socket.
-runTCPServerWithSocket
-    :: Socket
-    -> (Socket -> IO a)
-    -- ^ Called for each incoming connection, in a new thread
-    -> IO a
-runTCPServerWithSocket sock server = withSocketsDo $
-    forever $
-        E.bracketOnError (accept sock) (close . fst) $
-            \(conn, _peer) ->
-                void $ forkFinally (labelMe "TCP server" >> server conn) (const $ gclose conn)
