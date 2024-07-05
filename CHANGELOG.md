@@ -1,5 +1,11 @@
 # Revision history for network-run
 
+## 0.3.2
+
+* Add `openServerSocketWithOptions`, `openClientSocketWithOptions`,
+  `runTCPServerWithSocketOptions`, `runTCPClientWithSocketOptions`.
+  [#6](https://github.com/kazu-yamamoto/network-run/pull/6)
+
 ## 0.3.1
 
 * Using close instead of gracefulClose for client

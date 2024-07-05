@@ -7,7 +7,13 @@ module Network.Run.TCP (
 
     -- * Generalized API
     runTCPServerWithSocket,
+    runTCPServerWithSocketOptions,
     openServerSocket,
+    openServerSocketWithOptions,
+    runTCPClientWithSocket,
+    runTCPClientWithSocketOptions,
+    openClientSocket,
+    openClientSocketWithOptions,
 ) where
 
 import Control.Concurrent (forkFinally)
@@ -18,19 +24,53 @@ import Network.Socket
 import Network.Run.Core
 
 -- | Running a TCP client with a connected socket.
+--
+-- This is the same as:
+--
+-- > runTCPClientWithSocketOptions []
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
-runTCPClient host port client = withSocketsDo $ do
-    addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
-    E.bracket (open addr) close client
-  where
-    open addr = E.bracketOnError (openClientSocket addr) close return
+runTCPClient = runTCPClientWithSocket openClientSocket
+
+-- | Running a TCP client with a connected socket.
+--
+-- Sets the given socket options before connecting.
+runTCPClientWithSocketOptions :: [(SocketOption, Int)] -> HostName -> ServiceName -> (Socket -> IO a) -> IO a
+runTCPClientWithSocketOptions opts = runTCPClientWithSocket (openClientSocketWithOptions opts)
 
 -- | Running a TCP server with an accepted socket and its peer name.
+--
+-- This is the same as:
+--
+-- > runTCPServerWithSocketOptions []
 runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPServer = runTCPServerWithSocket openServerSocket
 
+-- | Running a TCP server with an accepted socket and its peer name.
+--
+-- Sets the given socket options before binding.
+runTCPServerWithSocketOptions :: [(SocketOption, Int)] -> Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
+runTCPServerWithSocketOptions opts = runTCPServerWithSocket (openServerSocketWithOptions opts)
+
 ----------------------------------------------------------------
 -- Generalized API
+
+-- | Generalization of 'runTCPClient'
+runTCPClientWithSocket
+    :: (AddrInfo -> IO Socket)
+    -- ^ Initialize socket.
+    --
+    -- This function is called while exceptions are masked.
+    --
+    -- The default (used by 'runTCPClient') is 'openClientSocket'.
+    -> HostName
+    -> ServiceName
+    -> (Socket -> IO a)
+    -> IO a
+runTCPClientWithSocket initSocket host port client = withSocketsDo $ do
+    addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
+    E.bracket (open addr) close client
+  where
+    open addr = E.bracketOnError (initSocket addr) close return
 
 -- | Generalization of 'runTCPServer'
 runTCPServerWithSocket

@@ -7,8 +7,9 @@ module Network.Run.TCP.Timeout (
 
     -- * Generalized API
     runTCPServerWithSocket,
-    openClientSocket,
+    runTCPServerWithSocketOptions,
     openServerSocket,
+    openServerSocketWithOptions,
 ) where
 
 import Control.Concurrent (forkFinally)
@@ -38,6 +39,19 @@ runTCPServer
     -> TimeoutServer a
     -> IO a
 runTCPServer = runTCPServerWithSocket openServerSocket
+
+-- | Running a TCP server with an accepted socket and its peer name.
+--
+-- Sets the given socket options on the socket before binding.
+runTCPServerWithSocketOptions
+    :: [(SocketOption, Int)]
+    -> Int
+    -- ^ Timeout in second.
+    -> Maybe HostName
+    -> ServiceName
+    -> TimeoutServer a
+    -> IO a
+runTCPServerWithSocketOptions opts = runTCPServerWithSocket (openServerSocketWithOptions opts)
 
 ----------------------------------------------------------------
 -- Generalized API
