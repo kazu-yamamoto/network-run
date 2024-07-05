@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- | Simple functions to run TCP clients and servers.
 module Network.Run.TCP (
@@ -10,8 +11,9 @@ module Network.Run.TCP (
 
     -- * Client
     runTCPClient,
-    runTCPClientWithSocket,
-    runTCPClientWithSocketOptions,
+    Settings,
+    settingsOpenClientSocket,
+    runTCPClientWithSettings,
     openClientSocket,
     openClientSocketWithOptions,
 ) where
@@ -56,33 +58,34 @@ runTCPServerWithSocket sock server = withSocketsDo $
 
 ----------------------------------------------------------------
 
+-- | Settings for client.
+data Settings = Settings
+    { settingsOpenClientSocket :: AddrInfo -> IO Socket
+    -- ^ Opening a socket. Use 'openClientSocketWithOptions' to specify 'SocketOption'
+    }
+
+-- | Default settings.
+defaultSettings :: Settings
+defaultSettings =
+    Settings
+        { settingsOpenClientSocket = openClientSocket
+        }
+
 -- | Running a TCP client with a connected socket.
 --
 -- This is the same as:
 --
--- > runTCPClientWithSocketOptions []
+-- > runTCPClientWithSettings defaultSettings
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
-runTCPClient = runTCPClientWithSocket openClientSocket
+runTCPClient = runTCPClientWithSettings defaultSettings
 
 -- | Running a TCP client with a connected socket.
---
--- Sets the given socket options before connecting.
-runTCPClientWithSocketOptions
-    :: [(SocketOption, Int)] -> HostName -> ServiceName -> (Socket -> IO a) -> IO a
-runTCPClientWithSocketOptions opts = runTCPClientWithSocket (openClientSocketWithOptions opts)
-
--- | Generalization of 'runTCPClient'
-runTCPClientWithSocket
-    :: (AddrInfo -> IO Socket)
-    -- ^ Initialize socket.
-    --
-    -- This function is called while exceptions are masked.
-    --
-    -- The default (used by 'runTCPClient') is 'openClientSocket'.
+runTCPClientWithSettings
+    :: Settings
     -> HostName
     -> ServiceName
     -> (Socket -> IO a)
     -> IO a
-runTCPClientWithSocket initSocket host port client = withSocketsDo $ do
+runTCPClientWithSettings Settings{..} host port client = withSocketsDo $ do
     addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
-    E.bracket (initSocket addr) close client
+    E.bracket (settingsOpenClientSocket addr) close client
