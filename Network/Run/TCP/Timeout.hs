@@ -72,7 +72,8 @@ runTCPServerWithSocket initSocket tm mhost port server = withSocketsDo $ do
         addr <- resolve Stream mhost port [AI_PASSIVE]
         E.bracket (open addr) close $ loop mgr
   where
-    open addr = E.bracketOnError (initSocket addr) close $ \sock -> do
+    open addr = do
+        sock <- initSocket addr
         listen sock 1024
         return sock
     loop mgr sock = forever $

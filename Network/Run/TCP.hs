@@ -34,7 +34,8 @@ runTCPClient = runTCPClientWithSocket openClientSocket
 -- | Running a TCP client with a connected socket.
 --
 -- Sets the given socket options before connecting.
-runTCPClientWithSocketOptions :: [(SocketOption, Int)] -> HostName -> ServiceName -> (Socket -> IO a) -> IO a
+runTCPClientWithSocketOptions
+    :: [(SocketOption, Int)] -> HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPClientWithSocketOptions opts = runTCPClientWithSocket (openClientSocketWithOptions opts)
 
 -- | Running a TCP server with an accepted socket and its peer name.
@@ -48,7 +49,12 @@ runTCPServer = runTCPServerWithSocket openServerSocket
 -- | Running a TCP server with an accepted socket and its peer name.
 --
 -- Sets the given socket options before binding.
-runTCPServerWithSocketOptions :: [(SocketOption, Int)] -> Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
+runTCPServerWithSocketOptions
+    :: [(SocketOption, Int)]
+    -> Maybe HostName
+    -> ServiceName
+    -> (Socket -> IO a)
+    -> IO a
 runTCPServerWithSocketOptions opts = runTCPServerWithSocket (openServerSocketWithOptions opts)
 
 ----------------------------------------------------------------
@@ -68,9 +74,7 @@ runTCPClientWithSocket
     -> IO a
 runTCPClientWithSocket initSocket host port client = withSocketsDo $ do
     addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
-    E.bracket (open addr) close client
-  where
-    open addr = E.bracketOnError (initSocket addr) close return
+    E.bracket (initSocket addr) close client
 
 -- | Generalization of 'runTCPServer'
 runTCPServerWithSocket
@@ -89,7 +93,8 @@ runTCPServerWithSocket initSocket mhost port server = withSocketsDo $ do
     addr <- resolve Stream mhost port [AI_PASSIVE]
     E.bracket (open addr) close loop
   where
-    open addr = E.bracketOnError (initSocket addr) close $ \sock -> do
+    open addr = do
+        sock <- initSocket addr
         listen sock 1024
         return sock
     loop sock = forever $

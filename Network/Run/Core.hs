@@ -44,10 +44,9 @@ openClientSocket :: AddrInfo -> IO Socket
 openClientSocket = openClientSocketWithOptions []
 
 openClientSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
-openClientSocketWithOptions opts ai = do
-    sock <- openSocket ai
+openClientSocketWithOptions opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     mapM_ (uncurry $ setSocketOption sock) opts
-    connect sock $ addrAddress ai
+    connect sock $ addrAddress addr
     return sock
 
 -- | Open socket for server use
