@@ -46,19 +46,21 @@ runUDPServerFork (h : hs) port server = do
     mapM_ (forkIO . run) hs
     run h
   where
-    run host = runUDPServer (Just host) port $ \lsock -> forever $ do
-        (bs0, peeraddr) <- recvFrom lsock 2048
-        let family = case peeraddr of
-                SockAddrInet{} -> AF_INET
-                SockAddrInet6{} -> AF_INET6
-                _ -> error "family"
-            hints =
-                defaultHints
-                    { addrSocketType = Datagram
-                    , addrFamily = family
-                    , addrFlags = [AI_PASSIVE]
-                    }
-        addr <- head <$> getAddrInfo (Just hints) Nothing (Just port)
-        s <- openServerSocket addr
-        connect s peeraddr
-        void $ forkFinally (server s bs0) (\_ -> close s)
+    run host = do
+        labelMe $ "UDP server for " ++ h
+        runUDPServer (Just host) port $ \lsock -> forever $ do
+            (bs0, peeraddr) <- recvFrom lsock 2048
+            let family = case peeraddr of
+                    SockAddrInet{} -> AF_INET
+                    SockAddrInet6{} -> AF_INET6
+                    _ -> error "family"
+                hints =
+                    defaultHints
+                        { addrSocketType = Datagram
+                        , addrFamily = family
+                        , addrFlags = [AI_PASSIVE]
+                        }
+            addr <- head <$> getAddrInfo (Just hints) Nothing (Just port)
+            s <- openServerSocket addr
+            connect s peeraddr
+            void $ forkFinally (labelMe "UDP server" >> server s bs0) (\_ -> close s)

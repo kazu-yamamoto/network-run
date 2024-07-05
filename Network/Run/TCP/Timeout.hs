@@ -64,7 +64,10 @@ runTCPServerWithSocket initSocket tm mhost port server = withSocketsDo $ do
     loop mgr sock = forever $
         E.bracketOnError (accept sock) (close . fst) $
             \(conn, _peer) ->
-                void $ forkFinally (server' mgr conn) (const $ gclose conn)
+                void $
+                    forkFinally
+                        (labelMe "TCP timeout server" >> server' mgr conn)
+                        (const $ gclose conn)
     server' mgr conn = do
         th <- T.registerKillThread mgr $ return ()
         server mgr th conn

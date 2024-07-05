@@ -7,11 +7,13 @@ module Network.Run.Core (
     openClientSocket,
     openServerSocket,
     gclose,
+    labelMe,
 ) where
 
 import qualified Control.Exception as E
 import Control.Monad (when)
 import Network.Socket
+import GHC.Conc.Sync
 
 resolve
     :: SocketType
@@ -62,3 +64,8 @@ gclose sock = gracefulClose sock 5000
 #else
 gclose = close
 #endif
+
+labelMe :: String -> IO ()
+labelMe name = do
+    tid <- myThreadId
+    labelThread tid name

@@ -55,4 +55,4 @@ runTCPServerWithSocket initSocket mhost port server = withSocketsDo $ do
     loop sock = forever $
         E.bracketOnError (accept sock) (close . fst) $
             \(conn, _peer) ->
-                void $ forkFinally (server conn) (const $ gclose conn)
+                void $ forkFinally (labelMe "TCP server" >> server conn) (const $ gclose conn)
