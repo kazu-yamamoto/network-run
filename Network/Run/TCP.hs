@@ -2,13 +2,14 @@
 
 -- | Simple functions to run TCP clients and servers.
 module Network.Run.TCP (
-    runTCPClient,
+    -- * Server
     runTCPServer,
-
-    -- * Generalized API
     runTCPServerWithSocket,
     openServerSocket,
     openServerSocketWithOptions,
+
+    -- * Client
+    runTCPClient,
     runTCPClientWithSocket,
     runTCPClientWithSocketOptions,
     openClientSocket,

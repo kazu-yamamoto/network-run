@@ -64,6 +64,8 @@ openServerSocket = openServerSocketWithOptions []
 -- * allow reuse of local addresses (SO_REUSEADDR)
 -- * automatically be closed during a successful @execve@ (FD_CLOEXEC)
 -- * bind to the address specified
+--
+-- Don't forget to call 'listen' for TCP after this.
 openServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
 openServerSocketWithOptions opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     setSocketOption sock ReuseAddr 1
