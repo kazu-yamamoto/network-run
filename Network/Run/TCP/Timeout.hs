@@ -7,7 +7,6 @@ module Network.Run.TCP.Timeout (
 
     -- * Generalized API
     runTCPServerWithSocket,
-    runTCPServerWithSocketOptions,
     openServerSocket,
     openServerSocketWithOptions,
 ) where
@@ -30,7 +29,7 @@ type TimeoutServer a =
     -- ^ A connected socket
     -> IO a
 
--- | Running a TCP server with an accepted socket and its peer name.
+-- | Running a TCP server with a connected socket.
 runTCPServer
     :: Int
     -- ^ Timeout in second.
@@ -38,51 +37,33 @@ runTCPServer
     -> ServiceName
     -> TimeoutServer a
     -> IO a
-runTCPServer = runTCPServerWithSocket openServerSocket
-
--- | Running a TCP server with an accepted socket and its peer name.
---
--- Sets the given socket options on the socket before binding.
-runTCPServerWithSocketOptions
-    :: [(SocketOption, Int)]
-    -> Int
-    -- ^ Timeout in second.
-    -> Maybe HostName
-    -> ServiceName
-    -> TimeoutServer a
-    -> IO a
-runTCPServerWithSocketOptions opts = runTCPServerWithSocket (openServerSocketWithOptions opts)
-
-----------------------------------------------------------------
--- Generalized API
-
--- | Generalization of 'runTCPServer'
---
--- See 'Network.Run.TCP.runTCPServerWithSocket' for additional discussion.
-runTCPServerWithSocket
-    :: (AddrInfo -> IO Socket)
-    -> Int
-    -- ^ Timeout in second.
-    -> Maybe HostName
-    -> ServiceName
-    -> TimeoutServer a
-    -> IO a
-runTCPServerWithSocket initSocket tm mhost port server = withSocketsDo $ do
-    T.withManager (tm * 1000000) $ \mgr -> do
-        addr <- resolve Stream mhost port [AI_PASSIVE]
-        E.bracket (open addr) close $ loop mgr
+runTCPServer tm mhost port server = withSocketsDo $ do
+    addr <- resolve Stream mhost port [AI_PASSIVE]
+    E.bracket (open addr) close $ \sock ->
+        runTCPServerWithSocket tm sock server
   where
     open addr = do
-        sock <- initSocket addr
+        sock <- openServerSocket addr
         listen sock 1024
         return sock
-    loop mgr sock = forever $
+
+-- | Running a TCP client with a connected socket for a given listen
+-- socket.
+runTCPServerWithSocket
+    :: Int
+    -- ^ Timeout in second.
+    -> Socket
+    -> TimeoutServer a
+    -> IO a
+runTCPServerWithSocket tm sock server = withSocketsDo $ do
+    T.withManager (tm * 1000000) $ \mgr -> forever $
         E.bracketOnError (accept sock) (close . fst) $
             \(conn, _peer) ->
                 void $
                     forkFinally
                         (labelMe "TCP timeout server" >> server' mgr conn)
                         (const $ gclose conn)
+  where
     server' mgr conn = do
         th <- T.registerKillThread mgr $ return ()
         server mgr th conn

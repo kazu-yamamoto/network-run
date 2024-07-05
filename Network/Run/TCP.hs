@@ -7,7 +7,6 @@ module Network.Run.TCP (
 
     -- * Generalized API
     runTCPServerWithSocket,
-    runTCPServerWithSocketOptions,
     openServerSocket,
     openServerSocketWithOptions,
     runTCPClientWithSocket,
@@ -44,18 +43,15 @@ runTCPClientWithSocketOptions opts = runTCPClientWithSocket (openClientSocketWit
 --
 -- > runTCPServerWithSocketOptions []
 runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
-runTCPServer = runTCPServerWithSocket openServerSocket
-
--- | Running a TCP server with an accepted socket and its peer name.
---
--- Sets the given socket options before binding.
-runTCPServerWithSocketOptions
-    :: [(SocketOption, Int)]
-    -> Maybe HostName
-    -> ServiceName
-    -> (Socket -> IO a)
-    -> IO a
-runTCPServerWithSocketOptions opts = runTCPServerWithSocket (openServerSocketWithOptions opts)
+runTCPServer mhost port server = withSocketsDo $ do
+    addr <- resolve Stream mhost port [AI_PASSIVE]
+    E.bracket (open addr) close $ \sock ->
+        runTCPServerWithSocket sock server
+  where
+    open addr = do
+        sock <- openServerSocket addr
+        listen sock 1024
+        return sock
 
 ----------------------------------------------------------------
 -- Generalized API
@@ -76,28 +72,15 @@ runTCPClientWithSocket initSocket host port client = withSocketsDo $ do
     addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
     E.bracket (initSocket addr) close client
 
--- | Generalization of 'runTCPServer'
+-- | Running a TCP client with a connected socket for a given listen
+-- socket.
 runTCPServerWithSocket
-    :: (AddrInfo -> IO Socket)
-    -- ^ Initialize socket.
-    --
-    -- This function is called while exceptions are masked.
-    --
-    -- The default (used by 'runTCPServer') is 'openServerSocket'.
-    -> Maybe HostName
-    -> ServiceName
+    :: Socket
     -> (Socket -> IO a)
     -- ^ Called for each incoming connection, in a new thread
     -> IO a
-runTCPServerWithSocket initSocket mhost port server = withSocketsDo $ do
-    addr <- resolve Stream mhost port [AI_PASSIVE]
-    E.bracket (open addr) close loop
-  where
-    open addr = do
-        sock <- initSocket addr
-        listen sock 1024
-        return sock
-    loop sock = forever $
+runTCPServerWithSocket sock server = withSocketsDo $
+    forever $
         E.bracketOnError (accept sock) (close . fst) $
             \(conn, _peer) ->
                 void $ forkFinally (labelMe "TCP server" >> server conn) (const $ gclose conn)
