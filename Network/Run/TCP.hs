@@ -12,6 +12,7 @@ module Network.Run.TCP (
     -- * Client
     runTCPClient,
     Settings,
+    defaultSettings,
     settingsOpenClientSocket,
     runTCPClientWithSettings,
     openClientSocket,
