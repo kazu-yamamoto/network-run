@@ -8,6 +8,8 @@ module Network.Run.Core (
     openClientSocketWithOptions,
     openServerSocket,
     openServerSocketWithOptions,
+    openTCPServerSocket,
+    openTCPServerSocketWithOptions,
     gclose,
     labelMe,
 ) where
@@ -64,8 +66,6 @@ openServerSocket = openServerSocketWithOptions []
 -- * allow reuse of local addresses (SO_REUSEADDR)
 -- * automatically be closed during a successful @execve@ (FD_CLOEXEC)
 -- * bind to the address specified
---
--- Don't forget to call 'listen' for TCP after this.
 openServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
 openServerSocketWithOptions opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     setSocketOption sock ReuseAddr 1
@@ -75,6 +75,28 @@ openServerSocketWithOptions opts addr = E.bracketOnError (openSocket addr) close
     mapM_ (uncurry $ setSocketOption sock) opts
     withFdSocket sock setCloseOnExecIfNeeded
     bind sock $ addrAddress addr
+    return sock
+
+-- | Open TCP socket for server use
+--
+-- This is the same as:
+--
+-- > openTCPServerSocketWithOptions []
+openTCPServerSocket :: AddrInfo -> IO Socket
+openTCPServerSocket = openTCPServerSocketWithOptions []
+
+-- | Open socket for server use, and set the provided options before binding.
+--
+-- In addition to the given options, the socket is configured to
+--
+-- * allow reuse of local addresses (SO_REUSEADDR)
+-- * automatically be closed during a successful @execve@ (FD_CLOEXEC)
+-- * bind to the address specified
+-- * listen with queue length with 1024
+openTCPServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
+openTCPServerSocketWithOptions opts addr = do
+    sock <- openServerSocketWithOptions opts addr
+    listen sock 1024
     return sock
 
 gclose :: Socket -> IO ()

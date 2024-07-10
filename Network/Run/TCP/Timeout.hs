@@ -39,13 +39,8 @@ runTCPServer
     -> IO a
 runTCPServer tm mhost port server = withSocketsDo $ do
     addr <- resolve Stream mhost port [AI_PASSIVE]
-    E.bracket (open addr) close $ \sock ->
+    E.bracket (openTCPServerSocket addr) close $ \sock ->
         runTCPServerWithSocket tm sock server
-  where
-    open addr = do
-        sock <- openServerSocket addr
-        listen sock 1024
-        return sock
 
 -- | Running a TCP client with a connected socket for a given listen
 -- socket.
