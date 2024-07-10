@@ -73,7 +73,7 @@ openServerSocketWithOptions opts addr = E.bracketOnError (openSocket addr) close
     when (addrFamily addr == AF_INET6) $ setSocketOption sock IPv6Only 1
 #endif
     mapM_ (uncurry $ setSocketOption sock) opts
-    withFdSocket sock $ setCloseOnExecIfNeeded
+    withFdSocket sock setCloseOnExecIfNeeded
     bind sock $ addrAddress addr
     return sock
 
