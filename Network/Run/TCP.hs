@@ -8,6 +8,7 @@ module Network.Run.TCP (
     runTCPServerWithSocket,
     openServerSocket,
     openServerSocketWithOptions,
+    resolve,
 
     -- * Client
     runTCPClient,
