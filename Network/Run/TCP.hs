@@ -6,8 +6,8 @@ module Network.Run.TCP (
     -- * Server
     runTCPServer,
     runTCPServerWithSocket,
-    openServerSocket,
-    openServerSocketWithOptions,
+    openTCPServerSocket,
+    openTCPServerSocketWithOptions,
     resolve,
 
     -- * Client
@@ -37,13 +37,8 @@ import Network.Run.Core
 runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPServer mhost port server = withSocketsDo $ do
     addr <- resolve Stream mhost port [AI_PASSIVE]
-    E.bracket (open addr) close $ \sock ->
+    E.bracket (openTCPServerSocket addr) close $ \sock ->
         runTCPServerWithSocket sock server
-  where
-    open addr = do
-        sock <- openServerSocket addr
-        listen sock 1024
-        return sock
 
 -- | Running a TCP client with a connected socket for a given listen
 -- socket.
