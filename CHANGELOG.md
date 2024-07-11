@@ -1,5 +1,10 @@
 # Revision history for network-run
 
+## 0.4.0
+
+* New API: `openTCPServerSocket`, `runTCPClientWithSettings`, etc.
+* Breaking change: runTCPServerSocket takes a socket itself
+
 ## 0.3.2
 
 * Add `openServerSocketWithOptions`, `openClientSocketWithOptions`,
