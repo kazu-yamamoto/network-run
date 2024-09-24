@@ -9,6 +9,7 @@ module Network.Run.TCP.Timeout (
     runTCPServerWithSocket,
     openServerSocket,
     openServerSocketWithOptions,
+    openServerSocketWithOpts,
 ) where
 
 import Control.Concurrent (forkFinally)
