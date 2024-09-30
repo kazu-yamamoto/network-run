@@ -8,6 +8,7 @@ module Network.Run.TCP (
     runTCPServerWithSocket,
     openTCPServerSocket,
     openTCPServerSocketWithOptions,
+    openTCPServerSocketWithOpts,
     resolve,
 
     -- * Client
@@ -18,9 +19,10 @@ module Network.Run.TCP (
     runTCPClientWithSettings,
     openClientSocket,
     openClientSocketWithOptions,
+    openClientSocketWithOpts,
 ) where
 
-import Control.Concurrent (forkFinally)
+import Control.Concurrent (forkFinally, threadDelay, forkIO)
 import qualified Control.Exception as E
 import Control.Monad (forever, void)
 import Network.Socket
@@ -30,10 +32,6 @@ import Network.Run.Core
 ----------------------------------------------------------------
 
 -- | Running a TCP server with an accepted socket and its peer name.
---
--- This is the same as:
---
--- > runTCPServerWithSocketOptions []
 runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPServer mhost port server = withSocketsDo $ do
     addr <- resolve Stream mhost port [AI_PASSIVE]
@@ -72,7 +70,9 @@ defaultSettings =
 --
 -- This is the same as:
 --
--- > runTCPClientWithSettings defaultSettings
+-- @
+-- 'runTCPClientWithSettings' 'defaultSettings'
+-- @
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPClient = runTCPClientWithSettings defaultSettings
 
