@@ -61,5 +61,5 @@ runTCPServerWithSocket tm sock server = withSocketsDo $ do
                         (const $ gclose conn)
   where
     server' mgr conn = do
-        th <- T.registerKillThread mgr $ return ()
-        server mgr th conn
+        E.bracket (T.registerKillThread mgr $ return ()) T.cancel $ \th ->
+          server mgr th conn
