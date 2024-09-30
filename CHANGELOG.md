@@ -2,6 +2,8 @@
 
 ## 0.4.1
 
+* Make sure to cancel Handles.
+  [#13](https://github.com/kazu-yamamoto/network-run/pull/13)
 * New API: `openClientSocketWithOpts`, `openServerSocketWithOpts`
   and `openTCPServerSocketWithOpts`.
   [#12](https://github.com/kazu-yamamoto/network-run/pull/12)
