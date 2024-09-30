@@ -9,6 +9,7 @@ import Control.Concurrent (forkFinally, forkIO)
 import qualified Control.Exception as E
 import Control.Monad (forever, void)
 import Data.ByteString (ByteString)
+import qualified Data.List.NonEmpty as NE
 import Network.Socket
 import Network.Socket.ByteString
 
@@ -60,7 +61,7 @@ runUDPServerFork (h : hs) port server = do
                         , addrFamily = family
                         , addrFlags = [AI_PASSIVE]
                         }
-            addr <- head <$> getAddrInfo (Just hints) Nothing (Just port)
+            addr <- NE.head <$> getAddrInfo (Just hints) Nothing (Just port)
             s <- openServerSocket addr
             connect s peeraddr
             void $ forkFinally (labelMe "UDP server" >> server s bs0) (\_ -> close s)
