@@ -1,5 +1,11 @@
 # Revision history for network-run
 
+## 0.4.1
+
+* New API: `openClientSocketWithOpts`, `openServerSocketWithOpts`
+  and `openTCPServerSocketWithOpts`.
+  [#12](https://github.com/kazu-yamamoto/network-run/pull/12)
+
 ## 0.4.0
 
 * New API: `openTCPServerSocket`, `runTCPClientWithSettings`, etc.
