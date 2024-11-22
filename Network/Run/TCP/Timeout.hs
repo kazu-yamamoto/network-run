@@ -53,13 +53,9 @@ runTCPServerWithSocket
     -> IO a
 runTCPServerWithSocket tm sock server = withSocketsDo $ do
     T.withManager (tm * 1000000) $ \mgr -> forever $
-        E.bracketOnError (accept sock) (close . fst) $
-            \(conn, _peer) ->
-                void $
-                    forkFinally
-                        (labelMe "TCP timeout server" >> server' mgr conn)
-                        (const $ gclose conn)
+        E.bracketOnError (accept sock) (close . fst) $ \(conn, _peer) ->
+            void $ forkFinally (server' mgr conn) (const $ gclose conn)
   where
     server' mgr conn = do
-        E.bracket (T.registerKillThread mgr $ return ()) T.cancel $ \th ->
-          server mgr th conn
+        labelMe "TCP timeout server"
+        T.withHandle mgr (return ()) $ \th -> server mgr th conn
