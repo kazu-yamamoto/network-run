@@ -1,5 +1,9 @@
 # Revision history for network-run
 
+## 0.4.2
+
+* Using `withHandle` of time-manager.
+
 ## 0.4.1
 
 * Make sure to cancel Handles.
