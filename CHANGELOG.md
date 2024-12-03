@@ -1,5 +1,9 @@
 # Revision history for network-run
 
+## 0.4.3
+
+* Using time-manager >= 0.2.
+
 ## 0.4.2
 
 * Using `withHandle` of time-manager.
