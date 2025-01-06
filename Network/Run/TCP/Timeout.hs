@@ -38,7 +38,7 @@ runTCPServer
     -> ServiceName
     -> TimeoutServer a
     -> IO a
-runTCPServer tm mhost port server = withSocketsDo $ do
+runTCPServer tm mhost port server = do
     addr <- resolve Stream mhost port [AI_PASSIVE]
     E.bracket (openTCPServerSocket addr) close $ \sock ->
         runTCPServerWithSocket tm sock server
@@ -51,7 +51,7 @@ runTCPServerWithSocket
     -> Socket
     -> TimeoutServer a
     -> IO a
-runTCPServerWithSocket tm sock server = withSocketsDo $ do
+runTCPServerWithSocket tm sock server = do
     T.withManager (tm * 1000000) $ \mgr -> forever $
         E.bracketOnError (accept sock) (close . fst) $ \(conn, _peer) ->
             void $ forkFinally (server' mgr conn) (const $ gclose conn)
