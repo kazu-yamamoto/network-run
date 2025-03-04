@@ -16,15 +16,18 @@ module Network.Run.TCP (
     Settings,
     defaultSettings,
     settingsOpenClientSocket,
+    settingsSelectAddrInfo,
     runTCPClientWithSettings,
     openClientSocket,
     openClientSocketWithOptions,
     openClientSocketWithOpts,
 ) where
 
-import Control.Concurrent (forkFinally, forkIO, threadDelay)
+import Control.Concurrent (forkFinally)
 import qualified Control.Exception as E
 import Control.Monad (forever, void)
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import Network.Socket
 
 import Network.Run.Core
@@ -34,7 +37,7 @@ import Network.Run.Core
 -- | Running a TCP server with an accepted socket and its peer name.
 runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPServer mhost port server = do
-    addr <- resolve Stream mhost port [AI_PASSIVE]
+    addr <- resolve Stream mhost port [AI_PASSIVE] NE.head
     E.bracket (openTCPServerSocket addr) close $ \sock ->
         runTCPServerWithSocket sock server
 
@@ -56,6 +59,8 @@ runTCPServerWithSocket sock server = forever $
 data Settings = Settings
     { settingsOpenClientSocket :: AddrInfo -> IO Socket
     -- ^ Opening a socket. Use 'openClientSocketWithOptions' to specify 'SocketOption'
+    , settingsSelectAddrInfo :: NonEmpty AddrInfo -> AddrInfo
+    -- ^ Selecting 'AddrInfo'.
     }
 
 -- | Default settings.
@@ -63,6 +68,7 @@ defaultSettings :: Settings
 defaultSettings =
     Settings
         { settingsOpenClientSocket = openClientSocket
+        , settingsSelectAddrInfo = NE.head
         }
 
 -- | Running a TCP client with a connected socket.
@@ -83,5 +89,5 @@ runTCPClientWithSettings
     -> (Socket -> IO a)
     -> IO a
 runTCPClientWithSettings Settings{..} host port client = do
-    addr <- resolve Stream (Just host) port [AI_ADDRCONFIG]
+    addr <- resolve Stream (Just host) port [AI_ADDRCONFIG] settingsSelectAddrInfo
     E.bracket (settingsOpenClientSocket addr) close client

@@ -15,6 +15,7 @@ module Network.Run.TCP.Timeout (
 import Control.Concurrent (forkFinally)
 import qualified Control.Exception as E
 import Control.Monad (forever, void)
+import qualified Data.List.NonEmpty as NE
 import Network.Socket
 import qualified System.TimeManager as T
 
@@ -39,7 +40,7 @@ runTCPServer
     -> TimeoutServer a
     -> IO a
 runTCPServer tm mhost port server = do
-    addr <- resolve Stream mhost port [AI_PASSIVE]
+    addr <- resolve Stream mhost port [AI_PASSIVE] NE.head
     E.bracket (openTCPServerSocket addr) close $ \sock ->
         runTCPServerWithSocket tm sock server
 

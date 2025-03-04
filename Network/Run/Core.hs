@@ -16,12 +16,11 @@ module Network.Run.Core (
     labelMe,
 ) where
 
-import qualified Data.List.NonEmpty as NE
+import Data.List.NonEmpty (NonEmpty)
 import Control.Arrow
 import Control.Concurrent
 import qualified Control.Exception as E
 import Control.Monad (when)
-import Foreign (Storable)
 import GHC.Conc.Sync
 import Network.Socket
 
@@ -30,9 +29,10 @@ resolve
     -> Maybe HostName
     -> ServiceName
     -> [AddrInfoFlag]
+    -> (NonEmpty AddrInfo -> AddrInfo)
     -> IO AddrInfo
-resolve socketType mhost port flags =
-    NE.head <$> getAddrInfo (Just hints) mhost (Just port)
+resolve socketType mhost port flags select =
+    select <$> getAddrInfo (Just hints) mhost (Just port)
   where
     hints =
         defaultHints

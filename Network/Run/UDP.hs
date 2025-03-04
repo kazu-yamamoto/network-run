@@ -21,14 +21,14 @@ import Network.Run.Core
 --   They should be used with 'sendTo'.
 runUDPClient :: HostName -> ServiceName -> (Socket -> SockAddr -> IO a) -> IO a
 runUDPClient host port client = do
-    addr <- resolve Datagram (Just host) port [AI_ADDRCONFIG]
+    addr <- resolve Datagram (Just host) port [AI_ADDRCONFIG] NE.head
     let sockAddr = addrAddress addr
     E.bracket (openSocket addr) close $ \sock -> client sock sockAddr
 
 -- | Running a UDP server with an open socket in a single Haskell thread.
 runUDPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runUDPServer mhost port server = do
-    addr <- resolve Datagram mhost port [AI_PASSIVE]
+    addr <- resolve Datagram mhost port [AI_PASSIVE] NE.head
     E.bracket (openServerSocket addr) close server
 
 -- | Running a UDP server with a connected socket in each Haskell thread.
