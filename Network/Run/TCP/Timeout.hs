@@ -37,8 +37,8 @@ runTCPServer
     -- ^ Timeout in second.
     -> Maybe HostName
     -> ServiceName
-    -> TimeoutServer a
-    -> IO a
+    -> TimeoutServer ()
+    -> IO ()
 runTCPServer tm mhost port server = do
     addr <- resolve Stream mhost port [AI_PASSIVE] NE.head
     E.bracket (openTCPServerSocket addr) close $ \sock ->
@@ -50,13 +50,13 @@ runTCPServerWithSocket
     :: Int
     -- ^ Timeout in second.
     -> Socket
-    -> TimeoutServer a
-    -> IO a
+    -> TimeoutServer ()
+    -> IO ()
 runTCPServerWithSocket tm sock server = do
     T.withManager (tm * 1000000) $ \mgr -> forever $
         E.bracketOnError (accept sock) (close . fst) $ \(conn, _peer) ->
-            void $ forkFinally (server' mgr conn) (const $ gclose conn)
+            void $ forkFinally (runServer mgr conn) (const $ gclose conn)
   where
-    server' mgr conn = do
+    runServer mgr conn = do
         labelMe "TCP timeout server"
-        T.withHandle mgr (return ()) $ \th -> server mgr th conn
+        T.withHandleKillThread mgr (return ()) $ \th -> server mgr th conn
