@@ -1,5 +1,11 @@
 # Revision history for network-run
 
+## 0.5.0
+
+* Fixing a bug that TimeoutServer is not killed.
+* Breaking change: the signatures of Timeout.runTCPServer and 
+  Timeout.runTCPServerWithSocket are changed.
+
 ## 0.4.3
 
 * Using time-manager >= 0.2.
