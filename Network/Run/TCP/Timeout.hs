@@ -4,6 +4,7 @@
 module Network.Run.TCP.Timeout (
     runTCPServer,
     TimeoutServer,
+    resolve,
 
     -- * Generalized API
     runTCPServerWithSocket,
@@ -49,6 +50,7 @@ runTCPServerWithSocket
     :: Int
     -- ^ Timeout in second.
     -> Socket
+    -- ^ A listening socket created by 'openTCPServerSocket'.
     -> TimeoutServer ()
     -> IO ()
 runTCPServerWithSocket tm sock server = do
