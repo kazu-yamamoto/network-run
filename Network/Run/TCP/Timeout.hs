@@ -7,9 +7,9 @@ module Network.Run.TCP.Timeout (
 
     -- * Generalized API
     runTCPServerWithSocket,
-    openServerSocket,
-    openServerSocketWithOptions,
-    openServerSocketWithOpts,
+    openTCPServerSocket,
+    openTCPServerSocketWithOptions,
+    openTCPServerSocketWithOpts,
 ) where
 
 import Control.Concurrent (forkFinally)
@@ -44,8 +44,7 @@ runTCPServer tm mhost port server = do
     E.bracket (openTCPServerSocket addr) close $ \sock ->
         runTCPServerWithSocket tm sock server
 
--- | Running a TCP client with a connected socket for a given listen
--- socket.
+-- | Running a TCP server on a given listen socket.
 runTCPServerWithSocket
     :: Int
     -- ^ Timeout in second.
