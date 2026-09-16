@@ -1,4 +1,4 @@
-cabal-version:      >=1.10
+cabal-version:      2.0
 name:               network-run
 version:            0.6.0
 license:            BSD3
@@ -32,6 +32,7 @@ library
 test-suite spec
     type:             exitcode-stdio-1.0
     main-is:          Spec.hs
+    build-tool-depends: hspec-discover:hspec-discover
     hs-source-dirs:   test .
     other-modules:
         CoreSpec
@@ -52,4 +53,5 @@ test-suite spec
         directory,
         hspec,
         network >=3.2.4,
-        time-manager >=0.2 && <0.4
+        time-manager >=0.2 && <0.4,
+        network-run
