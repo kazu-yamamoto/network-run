@@ -17,15 +17,15 @@ module Network.Run.Core (
     safeAccept,
 ) where
 
-import Data.List.NonEmpty (NonEmpty)
 import Control.Arrow
 import Control.Concurrent
 import qualified Control.Exception as E
 import Control.Monad (when)
-import GHC.Conc.Sync
-import Network.Socket
+import Data.List.NonEmpty (NonEmpty)
 import Foreign.C.Error (Errno (..), eCONNABORTED)
+import GHC.Conc.Sync
 import GHC.IO.Exception (IOErrorType (Interrupted), ioe_errno)
+import Network.Socket
 import System.IO.Error (ioeGetErrorType, isFullError)
 
 resolve
