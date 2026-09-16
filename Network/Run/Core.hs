@@ -224,7 +224,9 @@ report ServerSettings{..} mpeer se =
     settingsOnException mpeer se `E.catch` ignore
   where
     ignore :: E.SomeException -> IO ()
-    ignore _ = return ()
+    ignore e
+        | Just (E.SomeAsyncException _) <- E.fromException e = E.throwIO e
+        | otherwise = return ()
 
 -- | Closing a connected socket according to the settings.
 gcloseWith :: ServerSettings -> Socket -> IO ()
