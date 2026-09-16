@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Simple functions to run TCP servers.
 module Network.Run.TCP.Timeout (
     runTCPServer,
