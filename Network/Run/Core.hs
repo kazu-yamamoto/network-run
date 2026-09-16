@@ -15,7 +15,7 @@ module Network.Run.Core (
     openTCPServerSocketWithOpts,
     labelMe,
     safeAccept,
-    ServerSettings(..),
+    ServerSettings (..),
     defaultServerSettings,
     forkConnection,
     forkDatagram,
@@ -25,7 +25,7 @@ module Network.Run.Core (
 import Control.Arrow
 import Control.Concurrent
 import qualified Control.Exception as E
-import Control.Monad (when, void)
+import Control.Monad (void, when)
 import Data.List.NonEmpty (NonEmpty)
 import Foreign.C.Error (Errno (..), eCONNABORTED)
 import GHC.Conc.Sync
@@ -79,7 +79,8 @@ openClientSocketWithOptions = openClientSocketWithOpts . map (second SockOptValu
 -- ('Network.Socket.StructLinger').
 --
 -- The options are set before 'connect'.
-openClientSocketWithOpts :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
+openClientSocketWithOpts
+    :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
 openClientSocketWithOpts opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     mapM_ (uncurry $ setSockOptValue sock) opts
     connect sock $ addrAddress addr
@@ -124,7 +125,8 @@ openServerSocketWithOptions = openServerSocketWithOpts . map (second SockOptValu
 -- can be passed to ask for a dual stack socket. Note that OpenBSD
 -- always makes IPv6 sockets IPv6 only; the option is not set there and
 -- cannot be cleared.
-openServerSocketWithOpts :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
+openServerSocketWithOpts
+    :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
 openServerSocketWithOpts opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     setSocketOption sock ReuseAddr 1
 #if !defined(openbsd_HOST_OS)
@@ -135,7 +137,7 @@ openServerSocketWithOpts opts addr = E.bracketOnError (openSocket addr) close $ 
     bind sock $ addrAddress addr
     return sock
 
--- | Open TCP socket for server use
+-- | Open TCP socket for server use.
 --
 -- This is the same as:
 --
@@ -165,7 +167,8 @@ openTCPServerSocketWithOptions = openTCPServerSocketWithOpts . map (second SockO
 -- This is 'openServerSocketWithOpts' followed by 'listen' with a queue
 -- length of 1024.  See 'openServerSocketWithOpts' for the options which
 -- are set in addition to the given ones.
-openTCPServerSocketWithOpts :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
+openTCPServerSocketWithOpts
+    :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
 openTCPServerSocketWithOpts opts addr = do
     sock <- openServerSocketWithOpts opts addr
     listen sock 1024
