@@ -9,8 +9,10 @@ import Control.Monad
 import Data.ByteString (ByteString)
 import Data.IORef
 import qualified Data.List.NonEmpty as NE
+import GHC.IO.Exception (IOErrorType (InvalidArgument))
 import Network.Socket
 import Network.Socket.ByteString
+import System.IO.Error (ioeGetErrorType)
 import System.Info (os)
 import System.Timeout (timeout)
 import Test.Hspec
@@ -95,13 +97,13 @@ spec = do
     describe "openTCPServerSocket" $ do
         it "listens, unlike openServerSocket" $ limited $ do
             addr <- resolve Stream (Just loopback) "0" [AI_PASSIVE] NE.head
-            E.bracket (openServerSocket addr) close $ \sock -> do
-                port <- portOf <$> getSocketName sock
-                r <- E.try $ request port "hello"
-                case r :: Either E.IOException ByteString of
-                    Left e -> print e >> return ()
-                    Right _ ->
-                        expectationFailure "connected to a socket which is not listening"
+            -- Probing with 'connect' instead would be slow: BSD drops
+            -- the SYN sent to a socket which is bound but does not
+            -- listen, where Linux answers with RST.
+            E.bracket (openServerSocket addr) close $ \sock ->
+                accept sock `shouldThrow` invalidArgument
+            withTCPServer defaultServerSettings echo $ \port ->
+                request port "hello" `shouldReturn` "hello"
 
         it "sets ReuseAddr" $ limited $ withListenSocket $ \lsock _ ->
             getSocketOption lsock ReuseAddr `shouldNotReturn` 0
@@ -225,6 +227,10 @@ spec = do
             addrAddress addr `shouldBe` mark
 
 ----------------------------------------------------------------
+
+-- | 'accept' on a socket which is not listening fails with @EINVAL@.
+invalidArgument :: Selector E.IOException
+invalidArgument e = ioeGetErrorType e == InvalidArgument
 
 -- | A handler which fails the first connection and echoes the rest.
 failFirst :: IORef Int -> Socket -> IO ()
