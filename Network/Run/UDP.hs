@@ -6,6 +6,10 @@ module Network.Run.UDP (
     runUDPServerForkWithSettings,
     ServerSettings (..),
     defaultServerSettings,
+    openServerSocket,
+    openServerSocketWithOptions,
+    openServerSocketWithOpts,
+    resolve,
 ) where
 
 import Control.Concurrent (forkIO)
