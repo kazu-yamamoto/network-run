@@ -99,7 +99,7 @@ spec = do
                 port <- portOf <$> getSocketName sock
                 r <- E.try $ request port "hello"
                 case r :: Either E.IOException ByteString of
-                    Left _ -> return ()
+                    Left e -> print e >> return ()
                     Right _ ->
                         expectationFailure "connected to a socket which is not listening"
 
