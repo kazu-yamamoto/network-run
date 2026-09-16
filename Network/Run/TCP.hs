@@ -57,7 +57,7 @@ runTCPServerWithSettings set mhost port server = do
     E.bracket (openTCPServerSocket addr) close $ \sock ->
         runTCPServerWithSocketAndSettings set sock server
 
--- \| Running a TCP server on a given listen socket.
+-- | Running a TCP server on a given listen socket.
 runTCPServerWithSocket
     :: Socket
     -- ^ A listening socket created by 'openTCPServerSocket'.
