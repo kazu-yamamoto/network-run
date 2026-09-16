@@ -3,11 +3,14 @@ module Network.Run.UDP (
     runUDPClient,
     runUDPServer,
     runUDPServerFork,
+    runUDPServerForkWithSettings,
+    ServerSettings (..),
+    defaultServerSettings,
 ) where
 
-import Control.Concurrent (forkFinally, forkIO)
+import Control.Concurrent (forkIO)
 import qualified Control.Exception as E
-import Control.Monad (forever, void)
+import Control.Monad (forever)
 import Data.ByteString (ByteString)
 import qualified Data.List.NonEmpty as NE
 import Network.Socket
@@ -42,8 +45,17 @@ runUDPServer mhost port server = do
 --   This approach is fragile due to NAT rebidings.
 runUDPServerFork
     :: [HostName] -> ServiceName -> (Socket -> ByteString -> IO ()) -> IO ()
-runUDPServerFork [] _ _ = return ()
-runUDPServerFork (h : hs) port server = do
+runUDPServerFork = runUDPServerForkWithSettings defaultServerSettings
+
+-- | 'runUDPServerFork' with the given settings.
+runUDPServerForkWithSettings
+    :: ServerSettings
+    -> [HostName]
+    -> ServiceName
+    -> (Socket -> ByteString -> IO ())
+    -> IO ()
+runUDPServerForkWithSettings _ [] _ _ = return ()
+runUDPServerForkWithSettings set (h : hs) port server = do
     mapM_ (forkIO . run) hs
     run h
   where
@@ -55,7 +67,10 @@ runUDPServerFork (h : hs) port server = do
             (bs0, peeraddr) <- recvFrom lsock 2048
             -- Everything below is per-datagram work.  A failure here
             -- must not take the entire server down.
-            dispatch peeraddr bs0 `E.catch` ignoreIOError
+            dispatch peeraddr bs0 `E.catch` onDispatchError peeraddr
+
+    onDispatchError peeraddr e =
+        report set (Just peeraddr) $ E.toException (e :: E.IOException)
 
     dispatch peeraddr bs0 = case familyOf peeraddr of
         -- Neither IPv4 nor IPv6.  Just drop the datagram.
@@ -73,14 +88,9 @@ runUDPServerFork (h : hs) port server = do
             -- its finalizer.
             E.bracketOnError (openServerSocket addr) close $ \s -> do
                 connect s peeraddr
-                void $
-                    forkFinally
-                        (labelMe "UDP server" >> server s bs0)
-                        (\_ -> close s)
+                forkDatagram set s peeraddr $
+                    labelMe "UDP server" >> server s bs0
 
     familyOf SockAddrInet{} = Just AF_INET
     familyOf SockAddrInet6{} = Just AF_INET6
     familyOf _ = Nothing
-
-    ignoreIOError :: E.IOException -> IO ()
-    ignoreIOError _ = return ()

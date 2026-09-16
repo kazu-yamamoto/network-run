@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Network.Run.Core (
     resolve,
@@ -15,12 +16,17 @@ module Network.Run.Core (
     gclose,
     labelMe,
     safeAccept,
+    ServerSettings(..),
+    defaultServerSettings,
+    forkConnection,
+    forkDatagram,
+    report,
 ) where
 
 import Control.Arrow
 import Control.Concurrent
 import qualified Control.Exception as E
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Data.List.NonEmpty (NonEmpty)
 import Foreign.C.Error (Errno (..), eCONNABORTED)
 import GHC.Conc.Sync
@@ -154,14 +160,12 @@ openTCPServerSocket = openTCPServerSocketWithOptions []
 openTCPServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
 openTCPServerSocketWithOptions = openTCPServerSocketWithOpts . map (second SockOptValue)
 
--- | Open socket for server use, and set the provided options before binding.
+-- | Open socket for server use, and set the provided options before
+-- binding.
 --
--- In addition to the given options, the socket is configured to
---
--- * allow reuse of local addresses (SO_REUSEADDR)
--- * automatically be closed during a successful @execve@ (FD_CLOEXEC)
--- * bind to the address specified
--- * listen with queue length with 1024
+-- This is 'openServerSocketWithOpts' followed by 'listen' with a queue
+-- length of 1024.  See 'openServerSocketWithOpts' for the options which
+-- are set in addition to the given ones.
 openTCPServerSocketWithOpts :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
 openTCPServerSocketWithOpts opts addr = do
     sock <- openServerSocketWithOpts opts addr
@@ -180,6 +184,56 @@ labelMe name = do
     tid <- myThreadId
     labelThread tid name
 
+----------------------------------------------------------------
+
+-- | Settings for servers.
+--
+-- Fields which do not apply to a given server (for instance the
+-- graceful close timeout for a UDP server) are ignored.
+data ServerSettings = ServerSettings
+    { settingsOnException :: Maybe SockAddr -> E.SomeException -> IO ()
+    -- ^ Called when an exception is caught by the library instead of
+    -- being propagated.  The 'SockAddr' is 'Just' the peer when the
+    -- exception can be attributed to one.  Exceptions thrown by this
+    -- action itself are discarded, so it must not be relied on for
+    -- anything but reporting.  The default does nothing.
+    , settingsGracefulCloseTimeout :: Int
+    -- ^ Milliseconds 'gracefulClose' waits for the peer's FIN after a
+    -- connection handler returns.  Zero or less uses 'close' instead,
+    -- which releases the file descriptor immediately.  The default is
+    -- 5000.
+    , settingsAcceptRetryDelay :: Int
+    -- ^ Microseconds to wait before retrying 'accept' after running
+    -- out of file descriptors.  The default is 100000.
+    }
+
+-- | Default settings.  'settingsOnException' does nothing, so the
+-- behaviour is the same as before this type was introduced.
+defaultServerSettings :: ServerSettings
+defaultServerSettings =
+    ServerSettings
+        { settingsOnException = \_ _ -> return ()
+        , settingsGracefulCloseTimeout = 5000
+        , settingsAcceptRetryDelay = 100000
+        }
+
+-- | Calling 'settingsOnException', never letting it throw.  A hook
+-- must not be able to break a finalizer.
+report :: ServerSettings -> Maybe SockAddr -> E.SomeException -> IO ()
+report ServerSettings{..} mpeer se =
+    settingsOnException mpeer se `E.catch` ignore
+  where
+    ignore :: E.SomeException -> IO ()
+    ignore _ = return ()
+
+-- | Closing a connected socket according to the settings.
+gcloseWith :: ServerSettings -> Socket -> IO ()
+gcloseWith ServerSettings{..} sock
+    | settingsGracefulCloseTimeout <= 0 = close sock
+    | otherwise = gracefulClose sock settingsGracefulCloseTimeout
+
+----------------------------------------------------------------
+
 -- | Accepting a connection, retrying on transient errors.
 --
 -- 'accept' fails routinely for reasons which do not mean that the
@@ -191,10 +245,14 @@ labelMe name = do
 -- @EINVAL@, ...) are re-thrown, which is also how a closed socket
 -- stops the loop.
 --
+-- Running out of file descriptors is passed to 'settingsOnException'
+-- since a server which keeps hitting it is effectively out of service.
+-- @ECONNABORTED@ and @EINTR@ are not, being routine.
+--
 -- This function is interruptible: a blocked or sleeping retry still
 -- receives asynchronous exceptions, so the server remains killable.
-safeAccept :: Socket -> IO (Socket, SockAddr)
-safeAccept sock = loop
+safeAccept :: ServerSettings -> Socket -> IO (Socket, SockAddr)
+safeAccept set@ServerSettings{..} sock = loop
   where
     loop = do
         ex <- E.try $ accept sock
@@ -204,7 +262,10 @@ safeAccept sock = loop
                 -- No descriptor is available at the moment.  Retrying
                 -- at once would spin, since the listening socket stays
                 -- readable.
-                | isFullError e -> threadDelay emfileDelay >> loop
+                | isFullError e -> do
+                    report set Nothing $ E.toException e
+                    threadDelay settingsAcceptRetryDelay
+                    loop
                 -- These cost nothing; retry immediately.
                 | ioeGetErrorType e == Interrupted -> loop
                 | ioe_errno e == Just connAborted -> loop
@@ -212,5 +273,34 @@ safeAccept sock = loop
 
     Errno connAborted = eCONNABORTED
 
-emfileDelay :: Int
-emfileDelay = 100000 -- 100 milliseconds
+----------------------------------------------------------------
+
+-- | Forking a thread for an accepted socket.  An exception which
+-- escapes the action is reported, and the socket is closed by the
+-- given closer in either case.
+forkWith
+    :: ServerSettings
+    -> (Socket -> IO ())
+    -> Socket
+    -> SockAddr
+    -> IO a
+    -> IO ()
+forkWith set closer sock peer action = void $ forkFinally action finish
+  where
+    finish er = do
+        case er of
+            Right _ -> return ()
+            Left se -> report set (Just peer) se
+        -- 'report' never throws, so this is always reached.
+        closer sock `E.catch` onCloseError
+
+    onCloseError :: E.IOException -> IO ()
+    onCloseError e = report set (Just peer) $ E.toException e
+
+-- | 'forkWith' closing the socket gracefully.  For TCP.
+forkConnection :: ServerSettings -> Socket -> SockAddr -> IO a -> IO ()
+forkConnection set = forkWith set (gcloseWith set)
+
+-- | 'forkWith' closing the socket immediately.  For UDP.
+forkDatagram :: ServerSettings -> Socket -> SockAddr -> IO a -> IO ()
+forkDatagram set = forkWith set close
