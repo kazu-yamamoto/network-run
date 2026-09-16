@@ -8,6 +8,7 @@ import qualified Control.Exception as E
 import Control.Monad
 import Data.ByteString (ByteString)
 import Data.IORef
+import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import GHC.IO.Exception (IOErrorType (InvalidArgument))
 import Network.Socket
@@ -78,6 +79,53 @@ spec = do
                     Just (Left _) -> return ()
                     Just (Right _) -> expectationFailure "the accept loop returned"
                     Nothing -> expectationFailure "the accept loop did not stop"
+
+        it "listens on a single address family" $ limited $ do
+            port <- freeTCPPort
+            let hints =
+                    defaultHints
+                        { addrSocketType = Stream
+                        , addrFlags = [AI_PASSIVE]
+                        }
+            addrs <- getAddrInfo (Just hints) (Just "localhost") (Just $ show port)
+            let families = NE.toList $ NE.map addrFamily addrs
+            if length (nub families) < 2
+                then pendingWith "localhost has a single address family here"
+                else do
+                    -- Only the first address is used, so the other
+                    -- family is not served at all.
+                    let (served, unserved)
+                            | addrFamily (NE.head addrs) == AF_INET6 =
+                                ("::1", "127.0.0.1")
+                            | otherwise = ("127.0.0.1", "::1")
+                    withServerThread (runTCPServer (Just "localhost") (show port) echo) $ do
+                        threadDelay 200000
+                        echoOn served port `shouldReturn` "hello"
+                        echoOn unserved port `shouldThrow` anyIOException
+
+        it "drains a connection when the graceful close timeout is positive" $ limited $ do
+            -- The handler returns while the request it never read is
+            -- still queued.  'gracefulClose' sends FIN and drains it.
+            gate <- newEmptyMVar
+            let set = defaultServerSettings{settingsGracefulCloseTimeout = 500}
+            withTCPServer set (\_ -> takeMVar gate) $ \port ->
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    threadDelay 200000
+                    putMVar gate ()
+                    recv sock 1024 `shouldReturn` ""
+
+        it "resets a connection when the graceful close timeout is not positive" $ limited $ do
+            -- The same, with 'close' instead: unread data in the queue
+            -- makes the kernel answer with RST.
+            gate <- newEmptyMVar
+            let set = defaultServerSettings{settingsGracefulCloseTimeout = 0}
+            withTCPServer set (\_ -> takeMVar gate) $ \port ->
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    threadDelay 200000
+                    putMVar gate ()
+                    recv sock 1024 `shouldThrow` anyIOException
 
         it "serves many connections concurrently" $
             limited $
@@ -230,6 +278,12 @@ failFirst :: IORef Int -> Socket -> IO ()
 failFirst ref sock = do
     n <- atomicModifyIORef' ref $ \n -> (n + 1, n)
     if n == 0 then E.throwIO (userError "boom") else echo sock
+
+-- | One request and one response to the given host.
+echoOn :: HostName -> PortNumber -> IO ByteString
+echoOn host port = runTCPClient host (show port) $ \sock -> do
+    sendAll sock "hello"
+    recv sock 1024
 
 -- | A TCP port which is free at the time of the call.
 freeTCPPort :: IO PortNumber
