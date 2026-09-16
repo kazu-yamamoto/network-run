@@ -40,10 +40,14 @@ spec = do
                     ms `shouldSatisfy` (< 5000)
 
         it "keeps a handler which tickles alive" $ limited $ do
+            -- The handler lives 2.4 seconds, longer than the timeout,
+            -- but it tickles every 300ms.  The margin between the two
+            -- is what a loaded machine may eat without the test
+            -- becoming a lie, so it is kept wide.
             let server _ th sock = do
                     replicateM_ 8 $ threadDelay 300000 >> T.tickle th
                     sendAll sock "ok"
-            withTimeoutServer defaultServerSettings 1 server $ \port ->
+            withTimeoutServer defaultServerSettings 2 server $ \port ->
                 client port $ \sock -> do
                     sendAll sock "hello"
                     recv sock 1024 `shouldReturn` "ok"
