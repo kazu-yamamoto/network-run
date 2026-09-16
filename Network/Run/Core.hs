@@ -49,11 +49,6 @@ resolve socketType mhost port flags select =
             , addrFlags = flags
             }
 
-#if !MIN_VERSION_network(3,1,2)
-openSocket :: AddrInfo -> IO Socket
-openSocket addr = socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-#endif
-
 -- | This is the same as
 --
 -- @
@@ -225,13 +220,9 @@ report ServerSettings{..} mpeer se =
 
 -- | Closing a connected socket according to the settings.
 gcloseWith :: ServerSettings -> Socket -> IO ()
-#if MIN_VERSION_network(3,1,1)
 gcloseWith ServerSettings{..} sock
     | settingsGracefulCloseTimeout <= 0 = close sock
     | otherwise = gracefulClose sock settingsGracefulCloseTimeout
-#else
-gcloseWith _ sock = close sock
-#endif
 
 ----------------------------------------------------------------
 
