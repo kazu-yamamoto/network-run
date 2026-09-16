@@ -15,8 +15,11 @@ module Network.Run.Core (
     openTCPServerSocketWithOpts,
     labelMe,
     safeAccept,
+    safeAcceptWith,
     ServerSettings (..),
     defaultServerSettings,
+    gcloseWith,
+    forkWith,
     forkConnection,
     forkDatagram,
     report,
@@ -28,6 +31,7 @@ import qualified Control.Exception as E
 import Control.Monad (void, when)
 import Data.List.NonEmpty (NonEmpty)
 import Foreign.C.Error (Errno (..), eCONNABORTED)
+import Foreign.C.Types (CInt)
 import GHC.Conc.Sync
 import GHC.IO.Exception (IOErrorType (Interrupted), ioe_errno)
 import Network.Socket
@@ -62,10 +66,10 @@ openClientSocket = openClientSocketWithOptions []
 -- The options are set before 'connect'. This is equivalent to
 --
 -- @
--- 'openClientSocketWithOpts' . 'map' ('second' 'SockOptValue')
+-- 'openClientSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \@Int \@CInt))
 -- @
 openClientSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
-openClientSocketWithOptions = openClientSocketWithOpts . map (second SockOptValue)
+openClientSocketWithOptions = openClientSocketWithOpts . map (second sockOptInt)
 
 -- | Open a client socket with the given options
 --
@@ -96,10 +100,10 @@ openServerSocket = openServerSocketWithOptions []
 -- This is equivalent to
 --
 -- @
--- 'openServerSocketWithOpts' . 'map' ('second' 'SockOptValue')
+-- 'openServerSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \@Int \@CInt))
 -- @
 openServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
-openServerSocketWithOptions = openServerSocketWithOpts . map (second SockOptValue)
+openServerSocketWithOptions = openServerSocketWithOpts . map (second sockOptInt)
 
 -- | Open socket for server use, and set the provided options before binding.
 --
@@ -151,10 +155,10 @@ openTCPServerSocket = openTCPServerSocketWithOptions []
 -- This is equivalent to
 --
 -- @
--- 'openTCPServerSocketWithOpts' . 'map' ('second' 'SockOptValue')
+-- 'openTCPServerSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \@Int \@CInt))
 -- @
 openTCPServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
-openTCPServerSocketWithOptions = openTCPServerSocketWithOpts . map (second SockOptValue)
+openTCPServerSocketWithOptions = openTCPServerSocketWithOpts . map (second sockOptInt)
 
 -- | Open socket for server use, and set the provided options before
 -- binding.
@@ -168,6 +172,15 @@ openTCPServerSocketWithOpts opts addr = do
     sock <- openServerSocketWithOpts opts addr
     listen sock 1024
     return sock
+
+-- | An 'Int' option as a 'SockOptValue'.
+--
+-- The value must be converted to 'CInt' first.  A socket option is an
+-- @int@ in C, and 'SockOptValue' passes @sizeof@ of the value it is
+-- given, so an 'Int' asks the kernel to read eight bytes.  Linux
+-- ignores the extra ones, but BSD rejects the call with @EINVAL@.
+sockOptInt :: Int -> SockOptValue
+sockOptInt = SockOptValue . (fromIntegral :: Int -> CInt)
 
 labelMe :: String -> IO ()
 labelMe name = do
@@ -244,10 +257,17 @@ gcloseWith ServerSettings{..} sock
 -- This function is interruptible: a blocked or sleeping retry still
 -- receives asynchronous exceptions, so the server remains killable.
 safeAccept :: ServerSettings -> Socket -> IO (Socket, SockAddr)
-safeAccept set@ServerSettings{..} sock = loop
+safeAccept set sock = safeAcceptWith set $ accept sock
+
+-- | 'safeAccept' with the accepting action passed explicitly.  The
+-- error paths described above cannot be provoked on a real listening
+-- socket, so the test suite reaches them through this.
+safeAcceptWith
+    :: ServerSettings -> IO (Socket, SockAddr) -> IO (Socket, SockAddr)
+safeAcceptWith set@ServerSettings{..} accept' = loop
   where
     loop = do
-        ex <- E.try $ accept sock
+        ex <- E.try accept'
         case ex of
             Right r -> return r
             Left e
