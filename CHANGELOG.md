@@ -29,6 +29,8 @@
   the first host name.
 * Documenting IPV6_V6ONLY and the single address family of
   `runTCPServer`.
+* Network.Run.UDP exports `openServerSocket`,
+  `openServerSocketWithOptions` and `openServerSocketWithOpts`.
 
 ## 0.5.0
 
