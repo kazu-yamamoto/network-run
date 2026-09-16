@@ -48,7 +48,7 @@ runTCPServerWithSocket
     -- ^ Called for each incoming connection, in a new thread
     -> IO a
 runTCPServerWithSocket sock server = forever $
-    E.bracketOnError (accept sock) (close . fst) $
+    E.bracketOnError (safeAccept sock) (close . fst) $
         \(conn, _peer) ->
             void $ forkFinally (labelMe "TCP server" >> server conn) (const $ gclose conn)
 

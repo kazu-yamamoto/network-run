@@ -14,6 +14,7 @@ module Network.Run.Core (
     openTCPServerSocketWithOpts,
     gclose,
     labelMe,
+    safeAccept,
 ) where
 
 import Data.List.NonEmpty (NonEmpty)
@@ -23,6 +24,9 @@ import qualified Control.Exception as E
 import Control.Monad (when)
 import GHC.Conc.Sync
 import Network.Socket
+import Foreign.C.Error (Errno (..), eCONNABORTED)
+import GHC.IO.Exception (IOErrorType (Interrupted), ioe_errno)
+import System.IO.Error (ioeGetErrorType, isFullError)
 
 resolve
     :: SocketType
@@ -159,3 +163,38 @@ labelMe :: String -> IO ()
 labelMe name = do
     tid <- myThreadId
     labelThread tid name
+
+-- | Accepting a connection, retrying on transient errors.
+--
+-- 'accept' fails routinely for reasons which do not mean that the
+-- listening socket is broken: the peer may reset the connection before
+-- it is accepted (@ECONNABORTED@), or the process or the system may
+-- have run out of file descriptors (@EMFILE@\/@ENFILE@).  Letting
+-- these escape would terminate the accept loop, so they are retried
+-- here.  Errors which do suggest a broken listening socket (@EBADF@,
+-- @EINVAL@, ...) are re-thrown, which is also how a closed socket
+-- stops the loop.
+--
+-- This function is interruptible: a blocked or sleeping retry still
+-- receives asynchronous exceptions, so the server remains killable.
+safeAccept :: Socket -> IO (Socket, SockAddr)
+safeAccept sock = loop
+  where
+    loop = do
+        ex <- E.try $ accept sock
+        case ex of
+            Right r -> return r
+            Left e
+                -- No descriptor is available at the moment.  Retrying
+                -- at once would spin, since the listening socket stays
+                -- readable.
+                | isFullError e -> threadDelay emfileDelay >> loop
+                -- These cost nothing; retry immediately.
+                | ioeGetErrorType e == Interrupted -> loop
+                | ioe_errno e == Just connAborted -> loop
+                | otherwise -> E.throwIO e
+
+    Errno connAborted = eCONNABORTED
+
+emfileDelay :: Int
+emfileDelay = 100000 -- 100 milliseconds

@@ -55,7 +55,7 @@ runTCPServerWithSocket
     -> IO ()
 runTCPServerWithSocket tm sock server = do
     T.withManager (tm * 1000000) $ \mgr -> forever $
-        E.bracketOnError (accept sock) (close . fst) $ \(conn, _peer) ->
+        E.bracketOnError (safeAccept sock) (close . fst) $ \(conn, _peer) ->
             void $ forkFinally (runServer mgr conn) (const $ gclose conn)
   where
     runServer mgr conn = do
