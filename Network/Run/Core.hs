@@ -13,7 +13,6 @@ module Network.Run.Core (
     openTCPServerSocket,
     openTCPServerSocketWithOptions,
     openTCPServerSocketWithOpts,
-    gclose,
     labelMe,
     safeAccept,
     ServerSettings(..),
@@ -172,13 +171,6 @@ openTCPServerSocketWithOpts opts addr = do
     listen sock 1024
     return sock
 
-gclose :: Socket -> IO ()
-#if MIN_VERSION_network(3,1,1)
-gclose sock = gracefulClose sock 5000
-#else
-gclose = close
-#endif
-
 labelMe :: String -> IO ()
 labelMe name = do
     tid <- myThreadId
@@ -230,9 +222,13 @@ report ServerSettings{..} mpeer se =
 
 -- | Closing a connected socket according to the settings.
 gcloseWith :: ServerSettings -> Socket -> IO ()
+#if MIN_VERSION_network(3,1,1)
 gcloseWith ServerSettings{..} sock
     | settingsGracefulCloseTimeout <= 0 = close sock
     | otherwise = gracefulClose sock settingsGracefulCloseTimeout
+#else
+gcloseWith _ sock = close sock
+#endif
 
 ----------------------------------------------------------------
 
