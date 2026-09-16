@@ -22,7 +22,7 @@ module Network.Run.Core (
     report,
 ) where
 
-import Control.Arrow
+import Control.Arrow hiding (loop)
 import Control.Concurrent
 import qualified Control.Exception as E
 import Control.Monad (void, when)
@@ -279,12 +279,14 @@ forkWith
     -> IO ()
 forkWith set closer sock peer action = void $ forkFinally action finish
   where
-    finish er = do
-        case er of
-            Right _ -> return ()
-            Left se -> report set (Just peer) se
-        -- 'report' never throws, so this is always reached.
-        closer sock `E.catch` onCloseError
+    -- The socket must be closed even if the hook throws, which it does
+    -- when an asynchronous exception arrives while it is running.
+    finish er = reporting er `E.finally` closing
+
+    reporting (Right _) = return ()
+    reporting (Left se) = report set (Just peer) se
+
+    closing = closer sock `E.catch` onCloseError
 
     onCloseError :: E.IOException -> IO ()
     onCloseError e = report set (Just peer) $ E.toException e
