@@ -34,12 +34,9 @@ spec = do
             -- The port cannot be chosen in advance here, so an
             -- ephemeral one is looked up first.
             port <- freeTCPPort
-            E.bracket
-                (forkIO $ runTCPServer (Just loopback) (show port) echo)
-                killThread
-                $ \_ -> do
-                    threadDelay 200000
-                    request port "hello" `shouldReturn` "hello"
+            withServerThread (runTCPServer (Just loopback) (show port) echo) $ do
+                threadDelay 200000
+                request port "hello" `shouldReturn` "hello"
 
         it "keeps serving after a handler throws" $ limited $ do
             (set, getReports) <- collecting
@@ -123,15 +120,12 @@ spec = do
             E.bracket (openTCPServerSocket addr) close $ \lsock -> do
                 getSocketOption lsock IPv6Only `shouldNotReturn` 0
                 port <- portOf <$> getSocketName lsock
-                E.bracket
-                    (forkIO $ runTCPServerWithSocket lsock echo)
-                    killThread
-                    $ \_ -> do
-                        -- The IPv4 loopback must not reach it.
-                        r <- E.try $ request port "hello"
-                        case r :: Either E.IOException ByteString of
-                            Left _ -> return ()
-                            Right _ -> expectationFailure "IPv4 reached an IPv6 only socket"
+                withServerThread (void $ runTCPServerWithSocket lsock echo) $ do
+                    -- The IPv4 loopback must not reach it.
+                    r <- E.try $ request port "hello"
+                    case r :: Either E.IOException ByteString of
+                        Left _ -> return ()
+                        Right _ -> expectationFailure "IPv4 reached an IPv6 only socket"
 
         it "can be asked for a dual stack socket" $
             limited $
@@ -145,10 +139,9 @@ spec = do
                                 close
                                 $ \lsock -> do
                                     port <- portOf <$> getSocketName lsock
-                                    E.bracket
-                                        (forkIO $ runTCPServerWithSocket lsock echo)
-                                        killThread
-                                        $ \_ -> request port "hello" `shouldReturn` "hello"
+                                    withServerThread
+                                        (void $ runTCPServerWithSocket lsock echo)
+                                        $ request port "hello" `shouldReturn` "hello"
 
     describe "runTCPClient" $ do
         it "opens the socket with settingsOpenClientSocket" $ limited $ do

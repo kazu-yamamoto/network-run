@@ -28,10 +28,8 @@ spec = do
                 let server sock = forever $ do
                         (bs, peer) <- recvFrom sock 2048
                         void $ sendTo sock bs peer
-                E.bracket
-                    (forkIO $ runUDPServer (Just loopback) port server)
-                    killThread
-                    $ \_ -> udpRequest loopback port "hello" `shouldReturn` Just "hello"
+                withServerThread (runUDPServer (Just loopback) port server) $
+                    udpRequest loopback port "hello" `shouldReturn` Just "hello"
 
     describe "runUDPServerFork" $ do
         it "serves a datagram" $
@@ -126,12 +124,9 @@ withUDPServerFork
     -> IO a
 withUDPServerFork set hosts server body = do
     port <- freeUDPPort
-    E.bracket
-        (forkIO $ runUDPServerForkWithSettings set hosts port server)
-        killThread
-        $ \_ -> do
-            threadDelay 200000
-            body port
+    withServerThread (runUDPServerForkWithSettings set hosts port server) $ do
+        threadDelay 200000
+        body port
 
 -- | Sending a datagram until a reply comes back.  UDP may drop it, and
 -- the server may not have bound its port yet.

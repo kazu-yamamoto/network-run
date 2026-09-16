@@ -180,8 +180,9 @@ withDummySocket = E.bracket (socket AF_INET Stream defaultProtocol) close
 withHeldConnection :: (Socket -> IO a) -> IO a
 withHeldConnection body = withListenSocket $ \lsock port -> do
     var <- newEmptyMVar
-    E.bracket (forkIO $ accept lsock >>= putMVar var . fst) killThread $ \_ ->
-        client port $ \_held -> takeMVar var >>= body
+    withServerThread (accept lsock >>= putMVar var . fst) $
+        client port $
+            \_held -> takeMVar var >>= body
 
 emfile, eintr, aborted, bad :: IOError
 emfile = mkIOError fullErrorType "accept" Nothing Nothing

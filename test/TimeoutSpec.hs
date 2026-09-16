@@ -87,7 +87,6 @@ withTimeoutServer
     -> (PortNumber -> IO a)
     -> IO a
 withTimeoutServer set tm server body = withListenSocket $ \lsock port ->
-    E.bracket
-        (forkIO $ Timeout.runTCPServerWithSocketAndSettings set tm lsock server)
-        killThread
-        (\_ -> body port)
+    withServerThread
+        (Timeout.runTCPServerWithSocketAndSettings set tm lsock server)
+        (body port)

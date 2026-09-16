@@ -69,14 +69,38 @@ withListenSocket body = do
         port <- portOf <$> getSocketName lsock
         body lsock port
 
+-- | Running a server thread while the body runs.
+--
+-- A server which dies on its own, for instance because its port was
+-- taken between the moment it was found free and 'bind', would
+-- otherwise show up as the body waiting for an answer which is never
+-- coming.  Its exception is thrown to the caller instead, so that the
+-- failure says what actually happened.
+withServerThread :: IO () -> IO a -> IO a
+withServerThread server body = do
+    caller <- myThreadId
+    stopping <- newIORef False
+    let died (Right ()) = return ()
+        died (Left e) = do
+            stop <- readIORef stopping
+            unless stop $ E.throwTo caller $ ServerDied e
+        stopServer tid = writeIORef stopping True >> killThread tid
+    E.bracket (forkFinally server died) stopServer $ \_ -> body
+
+-- | A server thread which died on its own.
+newtype ServerDied = ServerDied E.SomeException
+
+instance Show ServerDied where
+    show (ServerDied e) = "the server thread died: " ++ show e
+
+instance E.Exception ServerDied
+
 -- | Running a TCP server on an ephemeral port while the body runs.
 withTCPServer
     :: ServerSettings -> (Socket -> IO ()) -> (PortNumber -> IO a) -> IO a
 withTCPServer set server body = withListenSocket $ \lsock port ->
-    E.bracket
-        (forkIO $ runTCPServerWithSocketAndSettings set lsock server)
-        killThread
-        (\_ -> body port)
+    withServerThread (void $ runTCPServerWithSocketAndSettings set lsock server) $
+        body port
 
 client :: PortNumber -> (Socket -> IO a) -> IO a
 client port = runTCPClient loopback (show port)
