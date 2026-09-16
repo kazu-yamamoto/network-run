@@ -48,20 +48,39 @@ runUDPServerFork (h : hs) port server = do
     run h
   where
     run host = do
-        labelMe $ "UDP server for " ++ h
+        labelMe $ "UDP server for " ++ host
         runUDPServer (Just host) port $ \lsock -> forever $ do
+            -- An error from 'recvFrom' means that the listening socket
+            -- itself is gone, so it is left to propagate as before.
             (bs0, peeraddr) <- recvFrom lsock 2048
-            let family = case peeraddr of
-                    SockAddrInet{} -> AF_INET
-                    SockAddrInet6{} -> AF_INET6
-                    _ -> error "family"
-                hints =
+            -- Everything below is per-datagram work.  A failure here
+            -- must not take the entire server down.
+            dispatch peeraddr bs0 `E.catch` ignoreIOError
+
+    dispatch peeraddr bs0 = case familyOf peeraddr of
+        -- Neither IPv4 nor IPv6.  Just drop the datagram.
+        Nothing -> return ()
+        Just family -> do
+            let hints =
                     defaultHints
                         { addrSocketType = Datagram
                         , addrFamily = family
                         , addrFlags = [AI_PASSIVE]
                         }
             addr <- NE.head <$> getAddrInfo (Just hints) Nothing (Just port)
-            s <- openServerSocket addr
-            connect s peeraddr
-            void $ forkFinally (labelMe "UDP server" >> server s bs0) (\_ -> close s)
+            -- If 'connect' throws, the socket is closed here.  On
+            -- success it is owned by the new thread and is closed by
+            -- its finalizer.
+            E.bracketOnError (openServerSocket addr) close $ \s -> do
+                connect s peeraddr
+                void $
+                    forkFinally
+                        (labelMe "UDP server" >> server s bs0)
+                        (\_ -> close s)
+
+    familyOf SockAddrInet{} = Just AF_INET
+    familyOf SockAddrInet6{} = Just AF_INET6
+    familyOf _ = Nothing
+
+    ignoreIOError :: E.IOException -> IO ()
+    ignoreIOError _ = return ()
