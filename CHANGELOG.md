@@ -1,9 +1,33 @@
 # Revision history for network-run
 
+## 0.6.0
+
+* Breaking change: Network.Run.TCP.Timeout no longer exports
+  `openServerSocket`, `openServerSocketWithOptions` and
+  `openServerSocketWithOpts`. They do not call `listen`, so
+  `runTCPServerWithSocket` cannot accept on the resulting socket.  Use
+  `openTCPServerSocket` and friends instead.
+* New API: Network.Run.TCP.Timeout now exports `resolve`,
+  `openTCPServerSocket`, `openTCPServerSocketWithOptions` and
+  `openTCPServerSocketWithOpts`.
+* `accept` no longer terminates the server on transient errors.
+  `ECONNABORTED` and `EINTR` are retried immediately, and
+  `EMFILE`/`ENFILE` are retried after a short delay. Note that the
+  latter is retried silently: a server which has run out of file
+  descriptors stays alive but stops serving new connections.
+* `runUDPServerFork` is now exception safe. A failure of
+  `getAddrInfo`, `openServerSocket` or `connect` no longer leaks a
+  socket nor kills the server. Such a datagram is silently dropped
+  instead. An unknown address family is also dropped rather than
+  calling `error`.
+* Fixing a bug that `runUDPServerFork` labels every forked thread with
+  the first host name.
+
+* Fixing the Haddock comments of `runTCPServerWithSocket`.
 ## 0.5.0
 
 * Fixing a bug that TimeoutServer is not killed.
-* Breaking change: the signatures of Timeout.runTCPServer and 
+* Breaking change: the signatures of Timeout.runTCPServer and
   Timeout.runTCPServerWithSocket are changed.
 
 ## 0.4.3
