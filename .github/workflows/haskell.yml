@@ -80,6 +80,9 @@ jobs:
     - name: Build
       run: cabal build ${{ env.target-config }} all
 
+    - name: Build examples
+      run: cabal build -f examples all
+
     - name: Run tests
       run: cabal test ${{ env.target-config }} all
 
