@@ -8,6 +8,7 @@
   bytes, to `setsockopt`. BSD rejects this with `EINVAL`, so the
   documented `(IPv6Only, 0)` for a dual stack socket did not work
   there. The value is converted to `CInt` now.
+* A test suite.
 * Breaking change: Network.Run.TCP.Timeout no longer exports
   `openServerSocket`, `openServerSocketWithOptions` and
   `openServerSocketWithOpts`. They do not call `listen`, so

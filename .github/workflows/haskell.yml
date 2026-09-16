@@ -1,0 +1,26 @@
+name: Haskell CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        ghc: ['9.6', '9.8', '9.10', '9.12']
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+      - name: Build
+        run: cabal build all
+      - name: Test
+        run: cabal test all --test-show-details=streaming

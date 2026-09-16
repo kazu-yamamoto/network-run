@@ -15,8 +15,11 @@ module Network.Run.Core (
     openTCPServerSocketWithOpts,
     labelMe,
     safeAccept,
+    safeAcceptWith,
     ServerSettings (..),
     defaultServerSettings,
+    gcloseWith,
+    forkWith,
     forkConnection,
     forkDatagram,
     report,
@@ -63,7 +66,7 @@ openClientSocket = openClientSocketWithOptions []
 -- The options are set before 'connect'. This is equivalent to
 --
 -- @
--- 'openClientSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \\@Int \\@CInt))
+-- 'openClientSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \@Int \@CInt))
 -- @
 openClientSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
 openClientSocketWithOptions = openClientSocketWithOpts . map (second sockOptInt)
@@ -97,7 +100,7 @@ openServerSocket = openServerSocketWithOptions []
 -- This is equivalent to
 --
 -- @
--- 'openServerSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \\@Int \\@CInt))
+-- 'openServerSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \@Int \@CInt))
 -- @
 openServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
 openServerSocketWithOptions = openServerSocketWithOpts . map (second sockOptInt)
@@ -152,7 +155,7 @@ openTCPServerSocket = openTCPServerSocketWithOptions []
 -- This is equivalent to
 --
 -- @
--- 'openTCPServerSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \\@Int \\@CInt))
+-- 'openTCPServerSocketWithOpts' . 'map' ('second' ('SockOptValue' . 'fromIntegral' \@Int \@CInt))
 -- @
 openTCPServerSocketWithOptions :: [(SocketOption, Int)] -> AddrInfo -> IO Socket
 openTCPServerSocketWithOptions = openTCPServerSocketWithOpts . map (second sockOptInt)
@@ -254,10 +257,17 @@ gcloseWith ServerSettings{..} sock
 -- This function is interruptible: a blocked or sleeping retry still
 -- receives asynchronous exceptions, so the server remains killable.
 safeAccept :: ServerSettings -> Socket -> IO (Socket, SockAddr)
-safeAccept set@ServerSettings{..} sock = loop
+safeAccept set sock = safeAcceptWith set $ accept sock
+
+-- | 'safeAccept' with the accepting action passed explicitly.  The
+-- error paths described above cannot be provoked on a real listening
+-- socket, so the test suite reaches them through this.
+safeAcceptWith
+    :: ServerSettings -> IO (Socket, SockAddr) -> IO (Socket, SockAddr)
+safeAcceptWith set@ServerSettings{..} accept' = loop
   where
     loop = do
-        ex <- E.try $ accept sock
+        ex <- E.try accept'
         case ex of
             Right r -> return r
             Left e
