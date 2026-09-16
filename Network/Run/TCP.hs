@@ -34,6 +34,11 @@ import Network.Run.Core
 ----------------------------------------------------------------
 
 -- | Running a TCP server with an accepted socket and its peer name.
+--
+-- Only the first address returned for @mhost@ is used, so a server
+-- created by this function listens on a single address family. Use
+-- 'runTCPServerWithSocket' with one socket per address to serve both
+-- IPv4 and IPv6.
 runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPServer mhost port server = do
     addr <- resolve Stream mhost port [AI_PASSIVE] NE.head

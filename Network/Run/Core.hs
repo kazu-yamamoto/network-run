@@ -105,8 +105,20 @@ openServerSocketWithOptions = openServerSocketWithOpts . map (second SockOptValu
 -- In addition to the given options, the socket is configured to
 --
 -- * allow reuse of local addresses (SO_REUSEADDR)
+-- * accept IPv6 only, rejecting IPv4-mapped addresses, if the address
+--   family is 'AF_INET6' (IPV6_V6ONLY)
 -- * automatically be closed during a successful @execve@ (FD_CLOEXEC)
 -- * bind to the address specified
+--
+-- Because IPV6_V6ONLY is in effect, a socket bound to @::@ does not
+-- accept IPv4 connections. To serve both families, open one socket per
+-- address and run a server on each of them with
+-- 'Network.Run.TCP.runTCPServerWithSocket'.
+--
+-- The given options are set after the ones above, so @(IPv6Only, 0)@
+-- can be passed to ask for a dual stack socket. Note that OpenBSD
+-- always makes IPv6 sockets IPv6 only; the option is not set there and
+-- cannot be cleared.
 openServerSocketWithOpts :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
 openServerSocketWithOpts opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
     setSocketOption sock ReuseAddr 1
@@ -129,6 +141,10 @@ openTCPServerSocket :: AddrInfo -> IO Socket
 openTCPServerSocket = openTCPServerSocketWithOptions []
 
 -- | Open socket for server use, and set the provided options before binding.
+--
+-- This is 'openServerSocketWithOpts' followed by 'listen' with a queue
+-- length of 1024. See 'openServerSocketWithOpts' for the options which
+-- are set in addition to the given ones.
 --
 -- This is equivalent to
 --
