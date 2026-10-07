@@ -16,7 +16,7 @@ module Network.Run.TCP (
 
     -- * Client
     runTCPClient,
-    Settings,
+    Settings (..),
     defaultSettings,
     settingsOpenClientSocket,
     settingsSelectAddrInfo,
