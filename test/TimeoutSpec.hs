@@ -75,8 +75,11 @@ spec = do
                 close lsock
                 r <- timeout 2000000 $ takeMVar done
                 case r of
-                    Just (Left _) -> return ()
-                    Just (Right _) -> expectationFailure "the accept loop returned"
+                    -- Quietly: an EBADF from a socket closed under the
+                    -- loop means what the shutdown action means.
+                    Just (Right _) -> return ()
+                    Just (Left e) ->
+                        expectationFailure $ "the accept loop threw: " ++ show e
                     Nothing -> expectationFailure "the accept loop did not stop"
 
 ----------------------------------------------------------------

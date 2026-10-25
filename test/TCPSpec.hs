@@ -76,8 +76,31 @@ spec = do
                 close lsock
                 r <- timeout 2000000 $ takeMVar done
                 case r of
-                    Just (Left _) -> return ()
-                    Just (Right _) -> expectationFailure "the accept loop returned"
+                    -- Quietly: an EBADF from a socket closed under the
+                    -- loop means what the shutdown action means.
+                    Just (Right _) -> return ()
+                    Just (Left e) ->
+                        expectationFailure $ "the accept loop threw: " ++ show e
+                    Nothing -> expectationFailure "the accept loop did not stop"
+
+        it "stops when it is told to" $ limited $ do
+            -- The way that still works once a close no longer ends a
+            -- thread waiting on the descriptor.
+            stop <- newEmptyMVar
+            done <- newEmptyMVar
+            let set = defaultServerSettings{settingsInstallShutdownHandler = putMVar stop}
+            withListenSocket $ \lsock _ -> do
+                void $
+                    forkFinally
+                        (runTCPServerWithSocketAndSettings set lsock echo)
+                        (putMVar done)
+                threadDelay 100000
+                join $ takeMVar stop
+                r <- timeout 2000000 $ takeMVar done
+                case r of
+                    Just (Right _) -> return ()
+                    Just (Left e) ->
+                        expectationFailure $ "the accept loop threw: " ++ show e
                     Nothing -> expectationFailure "the accept loop did not stop"
 
         it "listens on a single address family" $ limited $ do
