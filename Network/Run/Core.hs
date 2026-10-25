@@ -16,6 +16,8 @@ module Network.Run.Core (
     labelMe,
     safeAccept,
     safeAcceptWith,
+    Listener (..),
+    makeListener,
     ServerSettings (..),
     defaultServerSettings,
     gcloseWith,
@@ -25,15 +27,21 @@ module Network.Run.Core (
     report,
 ) where
 
+import Control.Applicative ((<|>))
 import Control.Arrow hiding (loop)
 import Control.Concurrent
+import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Control.Monad (void, when)
+import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
 import Foreign.C.Error (Errno (..), eCONNABORTED)
 import Foreign.C.Types (CInt)
 import GHC.Conc.Sync
-import GHC.IO.Exception (IOErrorType (Interrupted), ioe_errno)
+import GHC.IO.Exception (
+    IOErrorType (Interrupted, InvalidArgument, UnsupportedOperation),
+    ioe_errno,
+ )
 import Network.Socket
 import System.IO.Error (ioeGetErrorType, isFullError)
 
@@ -208,6 +216,14 @@ data ServerSettings = ServerSettings
     , settingsAcceptRetryDelay :: Int
     -- ^ Microseconds to wait before retrying 'accept' after running
     -- out of file descriptors.  The default is 100000.
+    , settingsInstallShutdownHandler :: IO () -> IO ()
+    -- ^ An action to install a handler (a Unix signal handler, say) which
+    -- stops the server.  The first argument is the action which does that:
+    -- it stops the loop accepting, and the listening socket is closed
+    -- afterwards by whoever opened it.  It is not an action which closes
+    -- that socket, and should not be used as one.  The default does
+    -- nothing, and the server is then stopped the other way, by an
+    -- asynchronous exception to the thread running it.
     }
 
 -- | Default settings.  'settingsOnException' does nothing, so the
@@ -218,6 +234,7 @@ defaultServerSettings =
         { settingsOnException = \_ _ -> return ()
         , settingsGracefulCloseTimeout = 5000
         , settingsAcceptRetryDelay = 100000
+        , settingsInstallShutdownHandler = const $ return ()
         }
 
 -- | Calling 'settingsOnException', never letting it throw.  A hook
@@ -239,6 +256,63 @@ gcloseWith ServerSettings{..} sock
 
 ----------------------------------------------------------------
 
+-- | What an accept loop waits on.
+data Listener = Listener
+    { waitAcceptable :: IO Bool
+    -- ^ Waits until there is something to accept.  'False' instead once
+    -- the server has been told to stop.
+    }
+
+-- | The listener for a socket an accept loop is about to run on.
+--
+-- The loop is stopped by being told, not by having the socket closed under
+-- it.  A close ends a thread waiting on a descriptor only because the
+-- event manager tells the waiter so, and that is being removed; after it
+-- is, a waiter left behind on a number which has been handed to someone
+-- else since would accept on that someone else's socket.
+--
+-- Where the wait cannot be made -- a completion-based I\/O manager has
+-- nothing to say about a socket being readable, and before network 3.2.2
+-- there is no 'waitAndCancelReadSocketSTM' to ask at all -- the old way
+-- stands: the shutdown action closes the socket and the loop ends on the
+-- @EBADF@ that accept() then gives.
+makeListener :: ServerSettings -> Socket -> IO Listener
+#if !defined(mingw32_HOST_OS) && MIN_VERSION_network(3,2,2)
+makeListener ServerSettings{..} sock = do
+    stopping <- newTVarIO False
+    settingsInstallShutdownHandler $ atomically $ writeTVar stopping True
+    return Listener{waitAcceptable = closedIsStopped $ wait stopping}
+  where
+    wait stopping = do
+        -- Cancelled however this ends, and not only when it ends because
+        -- the socket became readable: an I/O manager built on an interface
+        -- like io_uring holds a reference on the socket for as long as the
+        -- poll it was asked for is outstanding, so a wait left behind by a
+        -- server that has stopped is a socket that does not close.
+        (acceptable, cancelWait) <- waitAndCancelReadSocketSTM sock
+        flip E.finally cancelWait $
+            atomically $
+                ((check =<< readTVar stopping) $> False)
+                    <|> (acceptable $> True)
+
+-- Closing the listening socket is how a server was stopped before there
+-- was anything to tell, and callers which do it are still out there.
+-- Waiting on a descriptor that has been closed is an @EBADF@, under
+-- whichever name the I\/O manager gives it, and it means what the shutdown
+-- action means: stop accepting.
+closedIsStopped :: IO Bool -> IO Bool
+closedIsStopped = E.handle $ \e ->
+    if ioeGetErrorType e `elem` [InvalidArgument, UnsupportedOperation]
+        then return False
+        else E.throwIO e
+#else
+makeListener ServerSettings{..} sock = do
+    settingsInstallShutdownHandler $ close sock
+    return Listener{waitAcceptable = return True}
+#endif
+
+----------------------------------------------------------------
+
 -- | Accepting a connection, retrying on transient errors.
 --
 -- 'accept' fails routinely for reasons which do not mean that the
@@ -247,8 +321,8 @@ gcloseWith ServerSettings{..} sock
 -- have run out of file descriptors (@EMFILE@\/@ENFILE@).  Letting
 -- these escape would terminate the accept loop, so they are retried
 -- here.  Errors which do suggest a broken listening socket (@EBADF@,
--- @EINVAL@, ...) are re-thrown, which is also how a closed socket
--- stops the loop.
+-- @EINVAL@, ...) are re-thrown; a loop stops by being told, through
+-- 'settingsInstallShutdownHandler', and 'makeListener' says why.
 --
 -- Running out of file descriptors is passed to 'settingsOnException'
 -- since a server which keeps hitting it is effectively out of service.

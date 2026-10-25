@@ -1,5 +1,17 @@
 # Revision history for network-run
 
+## 0.7.0
+
+* Breaking change: an accept loop is stopped by being told, through the new
+  `settingsInstallShutdownHandler`, and not by having its listening socket
+  closed under it. A close ends a thread waiting on a descriptor only
+  because GHC's event manager tells the waiter so, and that is being
+  removed.
+* Breaking change: the TCP server functions return `IO ()` rather than the
+  caller's `IO a`, since they can now return.
+* Closing the listening socket still stops the loop, for the callers that
+  do it, but it ends quietly now instead of throwing.
+
 ## 0.6.0
 
 * Fixing a bug that the `[(SocketOption, Int)]` variants
