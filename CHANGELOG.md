@@ -8,6 +8,8 @@
   on the accept itself, so nothing has to be closed or interrupted.  A
   closed socket still stops the loop, now by returning rather than by
   throwing.
+* The UDP server's receive loop is stopped the same way, through
+  `recvFromWith`, rather than by an asynchronous exception.
 * Breaking change: `ServerSettings` gains `settingsInstallShutdownHandler`.
 * Breaking change: the TCP servers return `IO ()` rather than `IO a`,
   since they can now return.

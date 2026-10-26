@@ -37,6 +37,29 @@ spec = do
                 withUDPServerFork defaultServerSettings [loopback] echoDatagram $ \port ->
                     udpRequest loopback port "hello" `shouldReturn` Just "hello"
 
+        it "stops when the shutdown handler is run" $ limited $ do
+            told <- newEmptyMVar
+            done <- newEmptyMVar
+            port <- freeUDPPort
+            let set =
+                    defaultServerSettings
+                        { settingsInstallShutdownHandler = putMVar told
+                        }
+            void $
+                forkFinally
+                    (runUDPServerForkWithSettings set [loopback] port echoDatagram)
+                    (putMVar done)
+            stop <- takeMVar told
+            -- Served, so the loop is in its receive, and then told to stop.
+            udpRequest loopback port "hello" `shouldReturn` Just "hello"
+            stop
+            r <- timeout 2000000 $ takeMVar done
+            case r of
+                Just (Right ()) -> return ()
+                Just (Left e) ->
+                    expectationFailure $ "the server threw: " ++ show e
+                Nothing -> expectationFailure "the server did not stop"
+
         it "returns at once when no host is given" $ limited $ do
             r <- timeout 1000000 $ runUDPServerFork [] "0" $ \_ _ -> return ()
             r `shouldBe` Just ()
