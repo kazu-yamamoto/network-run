@@ -16,6 +16,8 @@ module Network.Run.Core (
     labelMe,
     safeAccept,
     safeAcceptWith,
+    Listener (..),
+    makeListener,
     ServerSettings (..),
     defaultServerSettings,
     gcloseWith,
@@ -27,13 +29,12 @@ module Network.Run.Core (
 
 import Control.Arrow hiding (loop)
 import Control.Concurrent
+import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Control.Monad (void, when)
 import Data.List.NonEmpty (NonEmpty)
-import Foreign.C.Error (Errno (..), eCONNABORTED)
 import Foreign.C.Types (CInt)
 import GHC.Conc.Sync
-import GHC.IO.Exception (IOErrorType (Interrupted), ioe_errno)
 import Network.Socket
 import System.IO.Error (ioeGetErrorType, isFullError)
 
@@ -208,6 +209,14 @@ data ServerSettings = ServerSettings
     , settingsAcceptRetryDelay :: Int
     -- ^ Microseconds to wait before retrying 'accept' after running
     -- out of file descriptors.  The default is 100000.
+    , settingsInstallShutdownHandler :: IO () -> IO ()
+    -- ^ An action to install a handler (a Unix signal handler, say) which
+    -- stops the server.  The first argument is the action which does that:
+    -- it stops the loop accepting, and the listening socket is closed
+    -- afterwards by whoever opened it.  It is not an action which closes
+    -- that socket, and should not be used as one.  The default does
+    -- nothing, and the server is then stopped the other way, by an
+    -- asynchronous exception to the thread running it.
     }
 
 -- | Default settings.  'settingsOnException' does nothing, so the
@@ -218,6 +227,7 @@ defaultServerSettings =
         { settingsOnException = \_ _ -> return ()
         , settingsGracefulCloseTimeout = 5000
         , settingsAcceptRetryDelay = 100000
+        , settingsInstallShutdownHandler = const $ return ()
         }
 
 -- | Calling 'settingsOnException', never letting it throw.  A hook
@@ -236,6 +246,43 @@ gcloseWith :: ServerSettings -> Socket -> IO ()
 gcloseWith ServerSettings{..} sock
     | settingsGracefulCloseTimeout <= 0 = close sock
     | otherwise = gracefulClose sock settingsGracefulCloseTimeout
+
+----------------------------------------------------------------
+
+-- | What an accept loop accepts through.
+data Listener = Listener
+    { acceptOrStop :: IO (Maybe (Socket, SockAddr))
+    -- ^ Accepts a connection.  'Nothing' instead once the server has
+    -- been told to stop.
+    }
+
+-- | The listener for a socket an accept loop is about to run on.
+--
+-- The loop is stopped by being told, through
+-- 'settingsInstallShutdownHandler', not by having the socket closed
+-- under it.  A close ends a thread blocked on a descriptor only because
+-- the event manager tells the waiter so, and that is being removed;
+-- after it is, a waiter left behind on a number which has been handed to
+-- someone else since would accept on that someone else's socket.
+--
+-- 'acceptWith' gives up on the accept itself, so nothing has to be
+-- closed and nothing has to be interrupted, on any platform.
+makeListener :: ServerSettings -> Socket -> IO Listener
+makeListener set@ServerSettings{..} sock = do
+    stopping <- newTVarIO False
+    settingsInstallShutdownHandler $ atomically $ writeTVar stopping True
+    return Listener{acceptOrStop = accepting stopping}
+  where
+    -- Closing the listening socket is how a server was stopped before
+    -- there was anything to tell, and callers which do it are still out
+    -- there.  It means what the shutdown action means: stop accepting.
+    closedAsStopped = E.handle $ \e ->
+        if isClosedSocketError e then return Nothing else E.throwIO e
+    accepting stopping =
+        closedAsStopped $
+            either (const Nothing) Just
+                <$> safeAcceptWith set (acceptWith sock $ told stopping)
+    told stopping = check =<< readTVar stopping
 
 ----------------------------------------------------------------
 
@@ -262,8 +309,7 @@ safeAccept set sock = safeAcceptWith set $ accept sock
 -- | 'safeAccept' with the accepting action passed explicitly.  The
 -- error paths described above cannot be provoked on a real listening
 -- socket, so the test suite reaches them through this.
-safeAcceptWith
-    :: ServerSettings -> IO (Socket, SockAddr) -> IO (Socket, SockAddr)
+safeAcceptWith :: ServerSettings -> IO a -> IO a
 safeAcceptWith set@ServerSettings{..} accept' = loop
   where
     loop = do
@@ -278,12 +324,9 @@ safeAcceptWith set@ServerSettings{..} accept' = loop
                     report set Nothing $ E.toException e
                     threadDelay settingsAcceptRetryDelay
                     loop
-                -- These cost nothing; retry immediately.
-                | ioeGetErrorType e == Interrupted -> loop
-                | ioe_errno e == Just connAborted -> loop
+                -- One connection's failure, which costs nothing to retry.
+                | isTransientAcceptError e -> loop
                 | otherwise -> E.throwIO e
-
-    Errno connAborted = eCONNABORTED
 
 ----------------------------------------------------------------
 

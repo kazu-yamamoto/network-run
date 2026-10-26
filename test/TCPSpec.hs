@@ -76,8 +76,31 @@ spec = do
                 close lsock
                 r <- timeout 2000000 $ takeMVar done
                 case r of
-                    Just (Left _) -> return ()
-                    Just (Right _) -> expectationFailure "the accept loop returned"
+                    Just (Right _) -> return ()
+                    Just (Left e) ->
+                        expectationFailure $ "the accept loop threw: " ++ show e
+                    Nothing -> expectationFailure "the accept loop did not stop"
+
+        it "stops when the shutdown handler is run" $ limited $ do
+            told <- newEmptyMVar
+            done <- newEmptyMVar
+            let set =
+                    defaultServerSettings
+                        { settingsInstallShutdownHandler = putMVar told
+                        }
+            withListenSocket $ \lsock _ -> do
+                void $
+                    forkFinally
+                        (runTCPServerWithSocketAndSettings set lsock echo)
+                        (putMVar done)
+                stop <- takeMVar told
+                threadDelay 100000
+                stop
+                r <- timeout 2000000 $ takeMVar done
+                case r of
+                    Just (Right _) -> return ()
+                    Just (Left e) ->
+                        expectationFailure $ "the accept loop threw: " ++ show e
                     Nothing -> expectationFailure "the accept loop did not stop"
 
         it "listens on a single address family" $ limited $ do

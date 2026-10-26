@@ -1,6 +1,6 @@
 cabal-version:      2.0
 name:               network-run
-version:            0.6.0
+version:            0.7.0
 license:            BSD3
 license-file:       LICENSE
 maintainer:         kazu@iij.ad.jp
@@ -31,7 +31,8 @@ library
     build-depends:
         base >=4 && <5,
         bytestring >=0.10 && <0.13,
-        network >=3.2.4 && <3.3,
+        network >=3.2.10 && <3.3,
+        stm >=2.5 && <2.6,
         time-manager >=0.2 && <0.6
 
 executable tcp-client
@@ -113,6 +114,7 @@ test-suite spec
         bytestring,
         directory,
         hspec,
-        network >=3.2.4,
+        network >=3.2.10,
+        stm >=2.5 && <2.6,
         time-manager >=0.2 && <0.6,
         network-run

@@ -1,5 +1,24 @@
 # Revision history for network-run
 
+## 0.7.0
+
+* The accept loop is stopped by being told, through the new
+  `settingsInstallShutdownHandler`, rather than by having the listening
+  socket closed under it.  It accepts with `acceptWith`, which gives up
+  on the accept itself, so nothing has to be closed or interrupted.  A
+  closed socket still stops the loop, now by returning rather than by
+  throwing.
+* Breaking change: `ServerSettings` gains `settingsInstallShutdownHandler`.
+* Breaking change: the TCP servers return `IO ()` rather than `IO a`,
+  since they can now return.
+* `Listener` and `makeListener` are exported for servers with an accept
+  loop of their own.
+* Which errno `accept` may be retried on comes from network's
+  `isTransientAcceptError` rather than from a list here, and this one
+  was the shorter of the two: `ECONNABORTED` and `EINTR` only, where
+  accept(2) names six more.
+* Requires network 3.2.10 for `acceptWith`.
+
 ## 0.6.0
 
 * Fixing a bug that the `[(SocketOption, Int)]` variants
