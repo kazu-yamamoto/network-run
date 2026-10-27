@@ -10,7 +10,7 @@ import Data.ByteString (ByteString)
 import Data.IORef
 import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
-import GHC.IO.Exception (IOErrorType (InvalidArgument))
+import GHC.IO.Exception (IOErrorType (InvalidArgument), ioe_errno)
 import Network.Socket
 import Network.Socket.ByteString
 import System.IO.Error (ioeGetErrorType)
@@ -176,8 +176,11 @@ spec = do
         it "sets ReuseAddr" $ limited $ withListenSocket $ \lsock _ ->
             getSocketOption lsock ReuseAddr `shouldNotReturn` 0
 
-        it "sets close-on-exec" $ limited $ withListenSocket $ \lsock _ ->
-            withFdSocket lsock getCloseOnExec `shouldReturn` True
+        it "sets close-on-exec" $ limited $
+            if os == "mingw32"
+                then pendingWith "Windows has no close-on-exec"
+                else withListenSocket $ \lsock _ ->
+                    withFdSocket lsock getCloseOnExec `shouldReturn` True
 
         it "sets a composite option" $ limited $ do
             addr <- resolve Stream (Just loopback) "0" [AI_PASSIVE] NE.head
@@ -293,8 +296,15 @@ spec = do
 ----------------------------------------------------------------
 
 -- | 'accept' on a socket which is not listening fails with @EINVAL@.
+--
+-- Winsock numbers its errors apart from @errno@ and network reports them
+-- all as 'GHC.IO.Exception.OtherError', so on Windows the code is what
+-- there is to look at.
 invalidArgument :: Selector E.IOException
-invalidArgument e = ioeGetErrorType e == InvalidArgument
+invalidArgument e =
+    ioeGetErrorType e == InvalidArgument || ioe_errno e == Just wsaEINVAL
+  where
+    wsaEINVAL = 10022
 
 -- | A handler which fails the first connection and echoes the rest.
 failFirst :: IORef Int -> Socket -> IO ()
