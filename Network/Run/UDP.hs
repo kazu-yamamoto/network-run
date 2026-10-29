@@ -101,7 +101,7 @@ runUDPServerForkWithSettings set (h : hs) port server = do
             -- If 'connect' throws, the socket is closed here.  On
             -- success it is owned by the new thread and is closed by
             -- its finalizer.
-            E.bracketOnError (openServerSocket addr) close $ \s -> do
+            E.bracketOnError (openServerSocket addr) unsafeClose $ \s -> do
                 connect s peeraddr
                 forkDatagram set s peeraddr $
                     labelMe "UDP server" >> server s bs0
