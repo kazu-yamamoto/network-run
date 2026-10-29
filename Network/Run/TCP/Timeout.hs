@@ -16,7 +16,7 @@ module Network.Run.TCP.Timeout (
 ) where
 
 import qualified Control.Exception as E
-import Control.Monad (forever)
+import Control.Monad (when)
 import qualified Data.List.NonEmpty as NE
 import Network.Socket
 import qualified System.TimeManager as T
@@ -82,11 +82,21 @@ runTCPServerWithSocketAndSettings
     -- ^ A listening socket created by 'openTCPServerSocket'.
     -> TimeoutServer ()
     -> IO ()
-runTCPServerWithSocketAndSettings set tm sock server =
-    T.withManager (tm * 1000000) $ \mgr -> forever $
-        E.bracketOnError (safeAccept set sock) (close . fst) $ \(conn, peer) ->
-            forkConnection set conn peer (runServer mgr conn)
+runTCPServerWithSocketAndSettings set tm sock server = do
+    listener <- makeListener set sock
+    T.withManager (tm * 1000000) $ \mgr -> loop listener mgr
   where
+    -- Accepting inside the acquire: once it has returned, the socket
+    -- is closed if anything goes wrong before the thread owning it has
+    -- been forked.
+    loop listener mgr = do
+        more <- E.bracketOnError (acceptOrStop listener) (mapM_ (close . fst)) $ \maccepted ->
+            case maccepted of
+                Nothing -> return False
+                Just (conn, peer) -> do
+                    forkConnection set conn peer (runServer mgr conn)
+                    return True
+        when more $ loop listener mgr
     runServer mgr conn = do
         labelMe "TCP timeout server"
         T.withHandleKillThread mgr (return ()) $ \th -> server mgr th conn

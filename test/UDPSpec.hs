@@ -4,6 +4,7 @@
 module UDPSpec (spec) where
 
 import Control.Concurrent
+import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Control.Monad
 import Data.ByteString (ByteString)
@@ -25,17 +26,49 @@ spec = do
         it "serves a datagram" $
             limited $ do
                 port <- freeUDPPort
-                let server sock = forever $ do
-                        (bs, peer) <- recvFrom sock 2048
-                        void $ sendTo sock bs peer
-                withServerThread (runUDPServer (Just loopback) port server) $
+                -- The loop is told to stop rather than killed: on Windows
+                -- killThread does not reach a thread blocked in recvFrom,
+                -- and withServerThread would wait for it for ever.
+                stop <- newTVarIO False
+                let server sock = loop
+                      where
+                        loop = do
+                            r <- recvFromWith sock 2048 $ check =<< readTVar stop
+                            case r of
+                                Left () -> return ()
+                                Right (bs, peer) -> sendTo sock bs peer >> loop
+                withServerThread (runUDPServer (Just loopback) port server) $ do
                     udpRequest loopback port "hello" `shouldReturn` Just "hello"
+                    atomically $ writeTVar stop True
 
     describe "runUDPServerFork" $ do
         it "serves a datagram" $
             limited $
                 withUDPServerFork defaultServerSettings [loopback] echoDatagram $ \port ->
                     udpRequest loopback port "hello" `shouldReturn` Just "hello"
+
+        it "stops when the shutdown handler is run" $ limited $ do
+            told <- newEmptyMVar
+            done <- newEmptyMVar
+            port <- freeUDPPort
+            let set =
+                    defaultServerSettings
+                        { settingsInstallShutdownHandler = putMVar told
+                        }
+            void $
+                forkFinally
+                    (runUDPServerForkWithSettings set [loopback] port echoDatagram)
+                    (putMVar done)
+            stop <- takeMVar told
+            -- Served, so the loop is in its receive, and then told to stop.
+            udpRequest loopback port "hello" `shouldReturn` Just "hello"
+            stop
+            r <- timeout 2000000 $ takeMVar done
+            case r of
+                Just (Right ()) -> return ()
+                Just (Left e) ->
+                    expectationFailure $ "the server threw: " ++ show e
+                Nothing -> expectationFailure "the server did not stop"
 
         it "returns at once when no host is given" $ limited $ do
             r <- timeout 1000000 $ runUDPServerFork [] "0" $ \_ _ -> return ()
@@ -136,7 +169,11 @@ udpRequest host port bs = runUDPClient host port $ \sock server -> go (20 :: Int
     go 0 _ _ = return Nothing
     go n sock server = do
         void $ sendTo sock bs server
-        mr <- timeout 200000 $ fst <$> recvFrom sock 2048
+        -- Not System.Timeout: on Windows an asynchronous exception does
+        -- not reach a thread blocked in recvFrom, so the retry below
+        -- would never come.
+        late <- registerDelay 200000
+        mr <- recvFromWith sock 2048 $ check =<< readTVar late
         case mr of
-            Just r -> return $ Just r
-            Nothing -> go (n - 1) sock server
+            Right (r, _) -> return $ Just r
+            Left () -> go (n - 1) sock server

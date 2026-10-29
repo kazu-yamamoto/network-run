@@ -13,8 +13,8 @@ module Network.Run.UDP (
 ) where
 
 import Control.Concurrent (forkIO)
+import Control.Concurrent.STM
 import qualified Control.Exception as E
-import Control.Monad (forever)
 import Data.ByteString (ByteString)
 import qualified Data.List.NonEmpty as NE
 import Network.Socket
@@ -60,18 +60,29 @@ runUDPServerForkWithSettings
     -> IO ()
 runUDPServerForkWithSettings _ [] _ _ = return ()
 runUDPServerForkWithSettings set (h : hs) port server = do
-    mapM_ (forkIO . run) hs
-    run h
+    -- One variable for all of the hosts: the shutdown action stops the
+    -- server, which is all of these loops.
+    stopping <- newTVarIO False
+    settingsInstallShutdownHandler set $ atomically $ writeTVar stopping True
+    mapM_ (forkIO . run stopping) hs
+    run stopping h
   where
-    run host = do
+    run stopping host = do
         labelMe $ "UDP server for " ++ host
-        runUDPServer (Just host) port $ \lsock -> forever $ do
-            -- An error from 'recvFrom' means that the listening socket
-            -- itself is gone, so it is left to propagate as before.
-            (bs0, peeraddr) <- recvFrom lsock 2048
-            -- Everything below is per-datagram work.  A failure here
-            -- must not take the entire server down.
-            dispatch peeraddr bs0 `E.catch` onDispatchError peeraddr
+        runUDPServer (Just host) port $ \lsock -> loop stopping lsock
+
+    -- The receive and the stop variable are waited for at once, so
+    -- nothing has to be closed under this thread and nothing has to be
+    -- thrown into it.
+    loop stopping lsock = do
+        r <- recvFromWith lsock 2048 $ check =<< readTVar stopping
+        case r of
+            Left () -> return ()
+            Right (bs0, peeraddr) -> do
+                -- Everything below is per-datagram work.  A failure here
+                -- must not take the entire server down.
+                dispatch peeraddr bs0 `E.catch` onDispatchError peeraddr
+                loop stopping lsock
 
     onDispatchError peeraddr e =
         report set (Just peeraddr) $ E.toException (e :: E.IOException)
