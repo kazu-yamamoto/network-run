@@ -1,4 +1,0 @@
--- network 3.2.10.0 is not on Hackage yet, and its generated configure is
--- not in git, so a source-repository-package cannot build it.  This takes
--- the sibling checkout instead.
-packages: . ../network
