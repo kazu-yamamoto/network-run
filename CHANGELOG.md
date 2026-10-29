@@ -1,5 +1,11 @@
 # Revision history for network-run
 
+## 0.7.1
+
+* Sockets this library owns and has not handed to anyone are closed with
+  `close(2)` rather than with `close`, which goes through the IO manager
+  to tell a waiter that is not there.  Requires network 3.2.11.
+
 ## 0.7.0
 
 * The accept loop is stopped by being told, through the new
