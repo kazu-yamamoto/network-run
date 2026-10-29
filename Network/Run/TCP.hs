@@ -27,6 +27,7 @@ module Network.Run.TCP (
 ) where
 
 import qualified Control.Exception as E
+import Control.Monad (when)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Network.Socket
@@ -78,14 +79,17 @@ runTCPServerWithSocketAndSettings set sock server = do
     listener <- makeListener set sock
     loop listener
   where
+    -- Accepting inside the acquire: once it has returned, the socket
+    -- is closed if anything goes wrong before the thread owning it has
+    -- been forked.
     loop listener = do
-        maccepted <- acceptOrStop listener
-        case maccepted of
-            Nothing -> return ()
-            Just (conn, peer) -> do
-                E.bracketOnError (return conn) close $ \_ ->
+        more <- E.bracketOnError (acceptOrStop listener) (mapM_ (close . fst)) $ \maccepted ->
+            case maccepted of
+                Nothing -> return False
+                Just (conn, peer) -> do
                     forkConnection set conn peer (labelMe "TCP server" >> server conn)
-                loop listener
+                    return True
+        when more $ loop listener
 
 ----------------------------------------------------------------
 
