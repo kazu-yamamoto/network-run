@@ -81,7 +81,7 @@ openClientSocketWithOptions = openClientSocketWithOpts . map (second sockOptInt)
 -- The options are set before 'connect'.
 openClientSocketWithOpts
     :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
-openClientSocketWithOpts opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
+openClientSocketWithOpts opts addr = E.bracketOnError (openSocket addr) unsafeClose $ \sock -> do
     mapM_ (uncurry $ setSockOptValue sock) opts
     connect sock $ addrAddress addr
     return sock
@@ -127,7 +127,7 @@ openServerSocketWithOptions = openServerSocketWithOpts . map (second sockOptInt)
 -- cannot be cleared.
 openServerSocketWithOpts
     :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
-openServerSocketWithOpts opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
+openServerSocketWithOpts opts addr = E.bracketOnError (openSocket addr) unsafeClose $ \sock -> do
     setSocketOption sock ReuseAddr 1
 #if !defined(openbsd_HOST_OS)
     when (addrFamily addr == AF_INET6) $ setSocketOption sock IPv6Only 1

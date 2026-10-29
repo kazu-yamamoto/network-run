@@ -59,7 +59,7 @@ runTCPServerWithSettings
     -> IO ()
 runTCPServerWithSettings set tm mhost port server = do
     addr <- resolve Stream mhost port [AI_PASSIVE] NE.head
-    E.bracket (openTCPServerSocket addr) close $ \sock ->
+    E.bracket (openTCPServerSocket addr) unsafeClose $ \sock ->
         runTCPServerWithSocketAndSettings set tm sock server
 
 -- | Running a TCP server on a given listen socket.
@@ -90,7 +90,7 @@ runTCPServerWithSocketAndSettings set tm sock server = do
     -- is closed if anything goes wrong before the thread owning it has
     -- been forked.
     loop listener mgr = do
-        more <- E.bracketOnError (acceptOrStop listener) (mapM_ (close . fst)) $ \maccepted ->
+        more <- E.bracketOnError (acceptOrStop listener) (mapM_ (unsafeClose . fst)) $ \maccepted ->
             case maccepted of
                 Nothing -> return False
                 Just (conn, peer) -> do
