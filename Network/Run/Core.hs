@@ -217,6 +217,15 @@ data ServerSettings = ServerSettings
     -- that socket, and should not be used as one.  The default does
     -- nothing, and the server is then stopped the other way, by an
     -- asynchronous exception to the thread running it.
+    --
+    -- __The server returns without waiting for the connections it is
+    -- serving.__  Stopping ends the accepting, not the handlers: a
+    -- caller which has to see them out has to do that itself, before
+    -- letting the process go.
+    --
+    -- This is installed once per server, and a TCP and a UDP server
+    -- share nothing but these settings, so running both with one
+    -- 'ServerSettings' installs it twice.
     }
 
 -- | Default settings.  'settingsOnException' does nothing, so the
