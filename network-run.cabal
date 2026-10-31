@@ -31,7 +31,7 @@ library
     build-depends:
         base >=4 && <5,
         bytestring >=0.10 && <0.13,
-        network >=3.2.11 && <3.3,
+        network >=3.2.12 && <3.3,
         stm >=2.5 && <2.6,
         time-manager >=0.2 && <0.6
 

@@ -206,6 +206,12 @@ data ServerSettings = ServerSettings
     -- connection handler returns.  Zero or less uses 'close' instead,
     -- which releases the file descriptor immediately.  The default is
     -- 5000.
+    , settingsUnsafeClose :: Bool
+    -- ^ Closing a connected socket with 'unsafeGracefulClose' or
+    -- 'unsafeClose', which skip the IO manager that 'close' goes through
+    -- to tell a thread waiting on the socket.  Set this only when the
+    -- connection handler leaves no thread and no registered wait on the
+    -- socket by the time it returns.  The default is 'False'.
     , settingsAcceptRetryDelay :: Int
     -- ^ Microseconds to wait before retrying 'accept' after running
     -- out of file descriptors.  The default is 100000.
@@ -235,6 +241,7 @@ defaultServerSettings =
     ServerSettings
         { settingsOnException = \_ _ -> return ()
         , settingsGracefulCloseTimeout = 5000
+        , settingsUnsafeClose = False
         , settingsAcceptRetryDelay = 100000
         , settingsInstallShutdownHandler = const $ return ()
         }
@@ -253,8 +260,12 @@ report ServerSettings{..} mpeer se =
 -- | Closing a connected socket according to the settings.
 gcloseWith :: ServerSettings -> Socket -> IO ()
 gcloseWith ServerSettings{..} sock
-    | settingsGracefulCloseTimeout <= 0 = close sock
-    | otherwise = gracefulClose sock settingsGracefulCloseTimeout
+    | settingsGracefulCloseTimeout <= 0 = closer sock
+    | otherwise = gracefulCloser sock settingsGracefulCloseTimeout
+  where
+    (closer, gracefulCloser)
+        | settingsUnsafeClose = (unsafeClose, unsafeGracefulClose)
+        | otherwise = (close, gracefulClose)
 
 ----------------------------------------------------------------
 
