@@ -150,6 +150,26 @@ spec = do
                     putMVar gate ()
                     recv sock 1024 `shouldThrow` anyIOException
 
+        it "drains a connection with unsafeGracefulClose when asked to" $ limited $ do
+            gate <- newEmptyMVar
+            let set = defaultServerSettings{settingsGracefulCloseTimeout = 500, settingsUnsafeClose = True}
+            withTCPServer set (\_ -> takeMVar gate) $ \port ->
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    threadDelay 200000
+                    putMVar gate ()
+                    recv sock 1024 `shouldReturn` ""
+
+        it "resets a connection with unsafeClose when asked to" $ limited $ do
+            gate <- newEmptyMVar
+            let set = defaultServerSettings{settingsGracefulCloseTimeout = 0, settingsUnsafeClose = True}
+            withTCPServer set (\_ -> takeMVar gate) $ \port ->
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    threadDelay 200000
+                    putMVar gate ()
+                    recv sock 1024 `shouldThrow` anyIOException
+
         it "serves many connections concurrently" $
             limited $
                 withTCPServer defaultServerSettings echo $ \port -> do

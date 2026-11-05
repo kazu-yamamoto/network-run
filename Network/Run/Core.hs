@@ -81,7 +81,7 @@ openClientSocketWithOptions = openClientSocketWithOpts . map (second sockOptInt)
 -- The options are set before 'connect'.
 openClientSocketWithOpts
     :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
-openClientSocketWithOpts opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
+openClientSocketWithOpts opts addr = E.bracketOnError (openSocket addr) unsafeClose $ \sock -> do
     mapM_ (uncurry $ setSockOptValue sock) opts
     connect sock $ addrAddress addr
     return sock
@@ -127,7 +127,7 @@ openServerSocketWithOptions = openServerSocketWithOpts . map (second sockOptInt)
 -- cannot be cleared.
 openServerSocketWithOpts
     :: [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
-openServerSocketWithOpts opts addr = E.bracketOnError (openSocket addr) close $ \sock -> do
+openServerSocketWithOpts opts addr = E.bracketOnError (openSocket addr) unsafeClose $ \sock -> do
     setSocketOption sock ReuseAddr 1
 #if !defined(openbsd_HOST_OS)
     when (addrFamily addr == AF_INET6) $ setSocketOption sock IPv6Only 1
@@ -206,6 +206,12 @@ data ServerSettings = ServerSettings
     -- connection handler returns.  Zero or less uses 'close' instead,
     -- which releases the file descriptor immediately.  The default is
     -- 5000.
+    , settingsUnsafeClose :: Bool
+    -- ^ Closing a connected socket with 'unsafeGracefulClose' or
+    -- 'unsafeClose', which skip the IO manager that 'close' goes through
+    -- to tell a thread waiting on the socket.  Set this only when the
+    -- connection handler leaves no thread and no registered wait on the
+    -- socket by the time it returns.  The default is 'False'.
     , settingsAcceptRetryDelay :: Int
     -- ^ Microseconds to wait before retrying 'accept' after running
     -- out of file descriptors.  The default is 100000.
@@ -235,6 +241,7 @@ defaultServerSettings =
     ServerSettings
         { settingsOnException = \_ _ -> return ()
         , settingsGracefulCloseTimeout = 5000
+        , settingsUnsafeClose = False
         , settingsAcceptRetryDelay = 100000
         , settingsInstallShutdownHandler = const $ return ()
         }
@@ -253,8 +260,12 @@ report ServerSettings{..} mpeer se =
 -- | Closing a connected socket according to the settings.
 gcloseWith :: ServerSettings -> Socket -> IO ()
 gcloseWith ServerSettings{..} sock
-    | settingsGracefulCloseTimeout <= 0 = close sock
-    | otherwise = gracefulClose sock settingsGracefulCloseTimeout
+    | settingsGracefulCloseTimeout <= 0 = closer sock
+    | otherwise = gracefulCloser sock settingsGracefulCloseTimeout
+  where
+    (closer, gracefulCloser)
+        | settingsUnsafeClose = (unsafeClose, unsafeGracefulClose)
+        | otherwise = (close, gracefulClose)
 
 ----------------------------------------------------------------
 
