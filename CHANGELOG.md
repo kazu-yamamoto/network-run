@@ -4,7 +4,12 @@
 
 * Sockets this library owns and has not handed to anyone are closed with
   `close(2)` rather than with `close`, which goes through the IO manager
-  to tell a waiter that is not there.  Requires network 3.2.11.
+  to tell a waiter that is not there.
+* `settingsUnsafeClose` lets a server close its connections with
+  `unsafeGracefulClose` or `unsafeClose`.  The default keeps `close`,
+  since only the caller knows whether its handler leaves a thread on the
+  socket.
+* Requires network 3.2.12.
 
 ## 0.7.0
 
