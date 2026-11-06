@@ -10,6 +10,7 @@ import Data.ByteString (ByteString)
 import Data.IORef
 import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
+import Data.Maybe (isJust)
 import GHC.IO.Exception (IOErrorType (InvalidArgument), ioe_errno)
 import Network.Socket
 import Network.Socket.ByteString
@@ -102,6 +103,55 @@ spec = do
                     Just (Left e) ->
                         expectationFailure $ "the accept loop threw: " ++ show e
                     Nothing -> expectationFailure "the accept loop did not stop"
+
+        it "waits for its connections once told to stop" $ limited $ do
+            told <- newEmptyMVar
+            done <- newEmptyMVar
+            let set = defaultServerSettings{settingsInstallShutdownHandler = putMVar told}
+            withListenSocket $ \lsock port -> do
+                void $
+                    forkFinally
+                        (runTCPServerWithSocketAndSettings set lsock echo)
+                        (putMVar done)
+                stop <- takeMVar told
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    _ <- recv sock 1024
+                    stop
+                    isJust <$> timeout 300000 (readMVar done) `shouldReturn` False
+                r <- timeout 2000000 $ takeMVar done
+                fmap (either (Left . show) Right) r `shouldBe` Just (Right ())
+
+        it "frees its port while waiting for its connections" $ limited $ do
+            told <- newEmptyMVar
+            done <- newEmptyMVar
+            port <- freeTCPPort
+            let set = defaultServerSettings{settingsInstallShutdownHandler = putMVar told}
+            void $
+                forkFinally
+                    (runTCPServerWithSettings set (Just loopback) (show port) echo)
+                    (putMVar done)
+            stop <- takeMVar told
+            threadDelay 200000
+            client port $ \sock -> do
+                sendAll sock "hello"
+                _ <- recv sock 1024
+                stop
+                threadDelay 200000
+                addr <- resolve Stream (Just loopback) (show port) [AI_PASSIVE] NE.head
+                E.bracket (openTCPServerSocket addr) close $ \_ -> return ()
+            void $ timeout 2000000 $ takeMVar done
+
+        it "does not wait for its connections when killed" $ limited $ do
+            done <- newEmptyMVar
+            withListenSocket $ \lsock port -> do
+                tid <-
+                    forkFinally (runTCPServerWithSocket lsock echo) (putMVar done)
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    _ <- recv sock 1024
+                    killThread tid
+                    isJust <$> timeout 1000000 (takeMVar done) `shouldReturn` True
 
         it "listens on a single address family" $ limited $ do
             port <- freeTCPPort

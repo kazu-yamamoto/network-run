@@ -59,8 +59,10 @@ runTCPServerWithSettings
     -> IO ()
 runTCPServerWithSettings set tm mhost port server = do
     addr <- resolve Stream mhost port [AI_PASSIVE] NE.head
+    -- Closed before the connections are waited for, so that the port is
+    -- free while they finish.
     E.bracket (openTCPServerSocket addr) unsafeClose $ \sock ->
-        runTCPServerWithSocketAndSettings set tm sock server
+        serve set (unsafeClose sock) tm sock server
 
 -- | Running a TCP server on a given listen socket.
 runTCPServerWithSocket
@@ -82,21 +84,31 @@ runTCPServerWithSocketAndSettings
     -- ^ A listening socket created by 'openTCPServerSocket'.
     -> TimeoutServer ()
     -> IO ()
-runTCPServerWithSocketAndSettings set tm sock server = do
+runTCPServerWithSocketAndSettings set = serve set (return ())
+
+-- | Running the accept loop, then the given action, then waiting for
+-- the connections, which use the manager until they are done.
+serve
+    :: ServerSettings -> IO () -> Int -> Socket -> TimeoutServer () -> IO ()
+serve set stopped tm sock server = do
     listener <- makeListener set sock
-    T.withManager (tm * 1000000) $ \mgr -> loop listener mgr
+    conns <- newConnections
+    T.withManager (tm * 1000000) $ \mgr -> do
+        loop listener conns mgr
+        stopped
+        waitConnections conns
   where
     -- Accepting inside the acquire: once it has returned, the socket
     -- is closed if anything goes wrong before the thread owning it has
     -- been forked.
-    loop listener mgr = do
+    loop listener conns mgr = do
         more <- E.bracketOnError (acceptOrStop listener) (mapM_ (unsafeClose . fst)) $ \maccepted ->
             case maccepted of
                 Nothing -> return False
                 Just (conn, peer) -> do
-                    forkConnection set conn peer (runServer mgr conn)
+                    forkConnection set conns conn peer (runServer mgr conn)
                     return True
-        when more $ loop listener mgr
+        when more $ loop listener conns mgr
     runServer mgr conn = do
         labelMe "TCP timeout server"
         T.withHandleKillThread mgr (return ()) $ \th -> server mgr th conn
