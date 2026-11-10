@@ -102,7 +102,8 @@ spec = do
             (set, getReports) <- collecting
             withDummySocket $ \sock -> do
                 closed <- newEmptyMVar
-                forkWith set (\_ -> putMVar closed ()) sock fakePeer $
+                conns <- newConnections
+                forkWith set conns (\_ -> putMVar closed ()) sock fakePeer $
                     E.throwIO $
                         userError "boom"
                 takeMVar closed `shouldReturn` ()
@@ -116,16 +117,35 @@ spec = do
                         }
             withDummySocket $ \sock -> do
                 closed <- newEmptyMVar
-                forkWith set (\_ -> putMVar closed ()) sock fakePeer $
+                conns <- newConnections
+                forkWith set conns (\_ -> putMVar closed ()) sock fakePeer $
                     E.throwIO $
                         userError "boom"
                 r <- timeout 1000000 $ takeMVar closed
                 r `shouldBe` Just ()
 
+        it "counts the thread until its socket is closed" $ limited $ do
+            conns <- newConnections
+            release <- newEmptyMVar
+            closed <- newIORef False
+            withDummySocket $ \sock ->
+                forkWith
+                    defaultServerSettings
+                    conns
+                    (\_ -> writeIORef closed True)
+                    sock
+                    fakePeer $
+                    takeMVar release
+            timeout 200000 (waitConnections conns) `shouldReturn` Nothing
+            putMVar release ()
+            timeout 1000000 (waitConnections conns) `shouldReturn` Just ()
+            readIORef closed `shouldReturn` True
+
         it "reports a failure of the closer" $ limited $ do
             (set, getReports) <- collecting
+            conns <- newConnections
             withDummySocket $ \sock ->
-                forkWith set (\_ -> ioError $ userError "close failed") sock fakePeer $
+                forkWith set conns (\_ -> ioError $ userError "close failed") sock fakePeer $
                     return ()
             reports <- waitFor 1 getReports
             case reports of

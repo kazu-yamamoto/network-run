@@ -54,8 +54,10 @@ runTCPServerWithSettings
     -> IO ()
 runTCPServerWithSettings set mhost port server = do
     addr <- resolve Stream mhost port [AI_PASSIVE] NE.head
+    -- Closed before the connections are waited for, so that the port is
+    -- free while they finish; the bracket closes it if that is not reached.
     E.bracket (openTCPServerSocket addr) unsafeClose $ \sock ->
-        runTCPServerWithSocketAndSettings set sock server
+        serve set (unsafeClose sock) sock server
 
 -- | Running a TCP server on a given listen socket.
 runTCPServerWithSocket
@@ -75,21 +77,29 @@ runTCPServerWithSocketAndSettings
     -> (Socket -> IO a)
     -- ^ Called for each incoming connection, in a new thread
     -> IO ()
-runTCPServerWithSocketAndSettings set sock server = do
+runTCPServerWithSocketAndSettings set = serve set (return ())
+
+-- | Running the accept loop, then the given action, then waiting for
+-- the connections.
+serve :: ServerSettings -> IO () -> Socket -> (Socket -> IO a) -> IO ()
+serve set stopped sock server = do
     listener <- makeListener set sock
-    loop listener
+    conns <- newConnections
+    loop listener conns
+    stopped
+    waitConnections conns
   where
     -- Accepting inside the acquire: once it has returned, the socket
     -- is closed if anything goes wrong before the thread owning it has
     -- been forked.
-    loop listener = do
+    loop listener conns = do
         more <- E.bracketOnError (acceptOrStop listener) (mapM_ (unsafeClose . fst)) $ \maccepted ->
             case maccepted of
                 Nothing -> return False
                 Just (conn, peer) -> do
-                    forkConnection set conn peer (labelMe "TCP server" >> server conn)
+                    forkConnection set conns conn peer (labelMe "TCP server" >> server conn)
                     return True
-        when more $ loop listener
+        when more $ loop listener conns
 
 ----------------------------------------------------------------
 

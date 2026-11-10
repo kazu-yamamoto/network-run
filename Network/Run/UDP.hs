@@ -12,9 +12,10 @@ module Network.Run.UDP (
     resolve,
 ) where
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar)
 import Control.Concurrent.STM
 import qualified Control.Exception as E
+import Control.Monad (forM)
 import Data.ByteString (ByteString)
 import qualified Data.List.NonEmpty as NE
 import Network.Socket
@@ -51,7 +52,9 @@ runUDPServerFork
     :: [HostName] -> ServiceName -> (Socket -> ByteString -> IO ()) -> IO ()
 runUDPServerFork = runUDPServerForkWithSettings defaultServerSettings
 
--- | 'runUDPServerFork' with the given settings.
+-- | 'runUDPServerFork' with the given settings.  Once stopped, it
+--   returns when the loops of all the hosts and the threads they forked
+--   are done.
 runUDPServerForkWithSettings
     :: ServerSettings
     -> [HostName]
@@ -64,30 +67,37 @@ runUDPServerForkWithSettings set (h : hs) port server = do
     -- server, which is all of these loops.
     stopping <- newTVarIO False
     settingsInstallShutdownHandler set $ atomically $ writeTVar stopping True
-    mapM_ (forkIO . run stopping) hs
-    run stopping h
+    conns <- newConnections
+    dones <- forM hs $ \host -> do
+        done <- newEmptyMVar
+        -- What escapes is left to the thread, as before, to be printed.
+        _ <- forkIO $ run stopping conns host `E.finally` putMVar done ()
+        return done
+    run stopping conns h
+    mapM_ takeMVar dones
+    waitConnections conns
   where
-    run stopping host = do
+    run stopping conns host = do
         labelMe $ "UDP server for " ++ host
-        runUDPServer (Just host) port $ \lsock -> loop stopping lsock
+        runUDPServer (Just host) port $ \lsock -> loop stopping conns lsock
 
     -- The receive and the stop variable are waited for at once, so
     -- nothing has to be closed under this thread and nothing has to be
     -- thrown into it.
-    loop stopping lsock = do
+    loop stopping conns lsock = do
         r <- recvFromWith lsock 2048 $ check =<< readTVar stopping
         case r of
             Left () -> return ()
             Right (bs0, peeraddr) -> do
                 -- Everything below is per-datagram work.  A failure here
                 -- must not take the entire server down.
-                dispatch peeraddr bs0 `E.catch` onDispatchError peeraddr
-                loop stopping lsock
+                dispatch conns peeraddr bs0 `E.catch` onDispatchError peeraddr
+                loop stopping conns lsock
 
     onDispatchError peeraddr e =
         report set (Just peeraddr) $ E.toException (e :: E.IOException)
 
-    dispatch peeraddr bs0 = case familyOf peeraddr of
+    dispatch conns peeraddr bs0 = case familyOf peeraddr of
         -- Neither IPv4 nor IPv6.  Just drop the datagram.
         Nothing -> return ()
         Just family -> do
@@ -103,7 +113,7 @@ runUDPServerForkWithSettings set (h : hs) port server = do
             -- its finalizer.
             E.bracketOnError (openServerSocket addr) unsafeClose $ \s -> do
                 connect s peeraddr
-                forkDatagram set s peeraddr $
+                forkDatagram set conns s peeraddr $
                     labelMe "UDP server" >> server s bs0
 
     familyOf SockAddrInet{} = Just AF_INET

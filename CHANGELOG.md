@@ -1,5 +1,12 @@
 # Revision history for network-run
 
+## 0.8.0
+
+A server told to stop returns only after its connections are done.
+
+* Wait for the connections once the server is told to stop
+  [#21](https://github.com/kazu-yamamoto/network-run/pull/21)
+
 ## 0.7.1
 
 * Sockets this library owns and has not handed to anyone are closed with

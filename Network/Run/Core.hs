@@ -21,6 +21,9 @@ module Network.Run.Core (
     ServerSettings (..),
     defaultServerSettings,
     gcloseWith,
+    Connections,
+    newConnections,
+    waitConnections,
     forkWith,
     forkConnection,
     forkDatagram,
@@ -224,10 +227,11 @@ data ServerSettings = ServerSettings
     -- nothing, and the server is then stopped the other way, by an
     -- asynchronous exception to the thread running it.
     --
-    -- __The server returns without waiting for the connections it is
-    -- serving.__  Stopping ends the accepting, not the handlers: a
-    -- caller which has to see them out has to do that itself, before
-    -- letting the process go.
+    -- __The server returns once the connections it is serving are
+    -- done.__  Stopping ends the accepting, not the handlers: they have
+    -- to end on their own, and a caller which cannot wait for them puts
+    -- a limit around the server.  A server stopped by an asynchronous
+    -- exception does not wait.
     --
     -- This is installed once per server, and a TCP and a UDP server
     -- share nothing but these settings, so running both with one
@@ -350,21 +354,36 @@ safeAcceptWith set@ServerSettings{..} accept' = loop
 
 ----------------------------------------------------------------
 
+-- | The threads a server has forked and which have not finished.
+newtype Connections = Connections (TVar Int)
+
+newConnections :: IO Connections
+newConnections = Connections <$> newTVarIO 0
+
+-- | Waiting until every thread forked has finished.
+waitConnections :: Connections -> IO ()
+waitConnections (Connections var) = atomically $ readTVar var >>= check . (== 0)
+
 -- | Forking a thread for an accepted socket.  An exception which
 -- escapes the action is reported, and the socket is closed by the
--- given closer in either case.
+-- given closer in either case.  The thread is counted from before it
+-- is forked until after the socket is closed.
 forkWith
     :: ServerSettings
+    -> Connections
     -> (Socket -> IO ())
     -> Socket
     -> SockAddr
     -> IO a
     -> IO ()
-forkWith set closer sock peer action = void $ forkFinally action finish
+forkWith set (Connections var) closer sock peer action = E.mask $ \restore -> do
+    atomically $ modifyTVar' var (+ 1)
+    void (forkIO $ E.try (restore action) >>= finish) `E.onException` done
   where
     -- The socket must be closed even if the hook throws, which it does
     -- when an asynchronous exception arrives while it is running.
-    finish er = reporting er `E.finally` closing
+    finish er = (reporting er `E.finally` closing) `E.finally` done
+    done = atomically $ modifyTVar' var (subtract 1)
 
     reporting (Right _) = return ()
     reporting (Left se) = report set (Just peer) se
@@ -375,9 +394,11 @@ forkWith set closer sock peer action = void $ forkFinally action finish
     onCloseError e = report set (Just peer) $ E.toException e
 
 -- | 'forkWith' closing the socket gracefully.  For TCP.
-forkConnection :: ServerSettings -> Socket -> SockAddr -> IO a -> IO ()
-forkConnection set = forkWith set (gcloseWith set)
+forkConnection
+    :: ServerSettings -> Connections -> Socket -> SockAddr -> IO a -> IO ()
+forkConnection set conns = forkWith set conns (gcloseWith set)
 
 -- | 'forkWith' closing the socket immediately.  For UDP.
-forkDatagram :: ServerSettings -> Socket -> SockAddr -> IO a -> IO ()
-forkDatagram set = forkWith set close
+forkDatagram
+    :: ServerSettings -> Connections -> Socket -> SockAddr -> IO a -> IO ()
+forkDatagram set conns = forkWith set conns close
