@@ -60,7 +60,7 @@ runTCPServerWithSettings
 runTCPServerWithSettings set tm mhost port server = do
     addr <- resolve Stream mhost port [AI_PASSIVE] NE.head
     -- Closed before the connections are waited for, so that the port is
-    -- free while they finish.
+    -- free while they finish; the bracket closes it if that is not reached.
     E.bracket (openTCPServerSocket addr) unsafeClose $ \sock ->
         serve set (unsafeClose sock) tm sock server
 
