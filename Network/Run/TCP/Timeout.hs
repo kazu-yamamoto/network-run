@@ -93,10 +93,10 @@ serve
 serve set stopped tm sock server = do
     listener <- makeListener set sock
     conns <- newConnections
-    T.withManager (tm * 1000000) $ \mgr -> do
-        loop listener conns mgr
-        stopped
-        waitConnections conns
+    T.withManager (tm * 1000000) $ \mgr ->
+        stopConnectionsAfter set conns $ do
+            loop listener conns mgr
+            stopped
   where
     -- Accepting inside the acquire: once it has returned, the socket
     -- is closed if anything goes wrong before the thread owning it has

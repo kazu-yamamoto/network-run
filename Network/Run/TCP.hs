@@ -85,9 +85,9 @@ serve :: ServerSettings -> IO () -> Socket -> (Socket -> IO a) -> IO ()
 serve set stopped sock server = do
     listener <- makeListener set sock
     conns <- newConnections
-    loop listener conns
-    stopped
-    waitConnections conns
+    stopConnectionsAfter set conns $ do
+        loop listener conns
+        stopped
   where
     -- Accepting inside the acquire: once it has returned, the socket
     -- is closed if anything goes wrong before the thread owning it has
