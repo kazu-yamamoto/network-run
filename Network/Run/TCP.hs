@@ -24,6 +24,7 @@ module Network.Run.TCP (
     openClientSocket,
     openClientSocketWithOptions,
     openClientSocketWithOpts,
+    openClientSocketGivingUp,
 ) where
 
 import qualified Control.Exception as E

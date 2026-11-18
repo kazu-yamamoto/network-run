@@ -7,6 +7,7 @@ module Network.Run.Core (
     openClientSocket,
     openClientSocketWithOptions,
     openClientSocketWithOpts,
+    openClientSocketGivingUp,
     openServerSocket,
     openServerSocketWithOptions,
     openServerSocketWithOpts,
@@ -40,7 +41,8 @@ import Data.List.NonEmpty (NonEmpty)
 import Foreign.C.Types (CInt)
 import GHC.Conc.Sync
 import Network.Socket
-import System.IO.Error (isFullError)
+import GHC.IO.Exception (IOErrorType (TimeExpired))
+import System.IO.Error (isFullError, mkIOError)
 import qualified System.ThreadManager as T
 
 resolve
@@ -90,6 +92,20 @@ openClientSocketWithOpts opts addr = E.bracketOnError (openSocket addr) unsafeCl
     mapM_ (uncurry $ setSockOptValue sock) opts
     connect sock $ addrAddress addr
     return sock
+
+-- | 'openClientSocketWithOpts' which gives up connecting once the 'STM'
+-- action succeeds, throwing an 'IOError' of type 'TimeExpired'.  It can
+-- be given to 'Network.Run.TCP.settingsOpenClientSocket'.
+--
+-- @since 0.9.0
+openClientSocketGivingUp
+    :: STM () -> [(SocketOption, SockOptValue)] -> AddrInfo -> IO Socket
+openClientSocketGivingUp giveUp opts addr = E.bracketOnError (openSocket addr) unsafeClose $ \sock -> do
+    mapM_ (uncurry $ setSockOptValue sock) opts
+    connectWith sock (addrAddress addr) giveUp >>= either (const gaveUp) return
+    return sock
+  where
+    gaveUp = ioError $ mkIOError TimeExpired "openClientSocketGivingUp" Nothing Nothing
 
 -- | Open socket for server use
 --
