@@ -130,6 +130,15 @@ runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPClient = runTCPClientWithSettings defaultSettings
 
 -- | Running a TCP client with a connected socket.
+--
+-- The settings are made from 'defaultSettings' with record update
+-- syntax, for example:
+--
+-- @
+-- 'runTCPClientWithSettings'
+--     'defaultSettings'{'settingsOpenClientSocket' = 'openClientSocketWithOptions' [('NoDelay', 1)]}
+--     host port client
+-- @
 runTCPClientWithSettings
     :: Settings
     -> HostName
