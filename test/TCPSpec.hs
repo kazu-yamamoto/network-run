@@ -12,7 +12,7 @@ import Data.List (nub)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (isJust)
 import Control.Concurrent.STM (retry)
-import GHC.IO.Exception (IOErrorType (InvalidArgument, TimeExpired), ioe_errno)
+import GHC.IO.Exception (IOErrorType (InvalidArgument), ioe_errno)
 import Network.Socket
 import Network.Socket.ByteString
 import System.IO.Error (ioeGetErrorType)
@@ -340,19 +340,18 @@ spec = do
                 r `shouldBe` "hello"
                 readIORef ref `shouldReturn` 1
 
-        it "connects with openClientSocketGivingUp" $ limited $
-            withTCPServer defaultServerSettings echo $ \port -> do
-                let set = defaultSettings{settingsOpenClientSocket = openClientSocketGivingUp retry []}
-                r <- runTCPClientWithSettings set loopback (show port) $ \sock -> do
-                    sendAll sock "hello"
-                    recv sock 1024
-                r `shouldBe` "hello"
-
-        it "gives up connecting with openClientSocketGivingUp" $ limited $
+        it "connects with openClientSocketWith" $ limited $
             withTCPServer defaultServerSettings echo $ \port -> do
                 addr <- resolve Stream (Just loopback) (show port) [] NE.head
-                openClientSocketGivingUp (return ()) [] addr
-                    `shouldThrow` ((== TimeExpired) . ioeGetErrorType)
+                Right sock <- openClientSocketWith [] addr retry
+                r <- (sendAll sock "hello" >> recv sock 1024) `E.finally` close sock
+                r `shouldBe` "hello"
+
+        it "gives up connecting with openClientSocketWith" $ limited $
+            withTCPServer defaultServerSettings echo $ \port -> do
+                addr <- resolve Stream (Just loopback) (show port) [] NE.head
+                r <- openClientSocketWith [] addr (return "given up")
+                either id (const "connected") r `shouldBe` ("given up" :: String)
 
         it "connects to what settingsSelectAddrInfo chose" $
             limited $
