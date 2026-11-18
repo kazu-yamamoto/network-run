@@ -153,6 +153,42 @@ spec = do
                     killThread tid
                     isJust <$> timeout 1000000 (takeMVar done) `shouldReturn` True
 
+        it "kills its connections when killed" $ limited $ do
+            serving <- newEmptyMVar
+            killed <- newEmptyMVar
+            withListenSocket $ \lsock port -> do
+                tid <- forkIO $ runTCPServerWithSocket lsock $ blocking serving killed
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    takeMVar serving
+                    killThread tid
+                    isJust <$> timeout 1000000 (takeMVar killed) `shouldReturn` True
+
+        it "kills its connections once the grace has passed" $ limited $ do
+            told <- newEmptyMVar
+            done <- newEmptyMVar
+            serving <- newEmptyMVar
+            killed <- newEmptyMVar
+            let set =
+                    defaultServerSettings
+                        { settingsInstallShutdownHandler = putMVar told
+                        , settingsGracefulShutdownTimeout = Just 1
+                        }
+            withListenSocket $ \lsock port -> do
+                void $
+                    forkFinally
+                        (runTCPServerWithSocketAndSettings set lsock $ blocking serving killed)
+                        (putMVar done)
+                stop <- takeMVar told
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    takeMVar serving
+                    stop
+                    (r, ms) <- elapsed $ timeout 3000000 $ takeMVar done
+                    fmap (either (Left . show) Right) r `shouldBe` Just (Right ())
+                    ms `shouldSatisfy` (>= 900)
+                    isJust <$> timeout 1000000 (takeMVar killed) `shouldReturn` True
+
         it "listens on a single address family" $ limited $ do
             port <- freeTCPPort
             let hints =

@@ -116,6 +116,13 @@ echo sock = loop
         bs <- recv sock 1024
         unless (BS.null bs) $ sendAll sock bs >> loop
 
+-- | A handler which says that it is serving and then never ends by
+-- itself, saying so when it is killed.
+blocking :: MVar () -> MVar () -> a -> IO ()
+blocking serving killed _ =
+    (putMVar serving () >> threadDelay 100000000)
+        `E.onException` putMVar killed ()
+
 ----------------------------------------------------------------
 
 -- | What 'settingsOnException' was called with.

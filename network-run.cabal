@@ -33,7 +33,7 @@ library
         bytestring >=0.10 && <0.13,
         network >=3.2.12 && <3.3,
         stm >=2.5 && <2.6,
-        time-manager >=0.2 && <0.6
+        time-manager >=0.5.3 && <0.6
 
 executable tcp-client
     main-is:          tcpClient.hs
@@ -116,5 +116,5 @@ test-suite spec
         hspec,
         network >=3.2.10,
         stm >=2.5 && <2.6,
-        time-manager >=0.2 && <0.6,
+        time-manager >=0.5.3 && <0.6,
         network-run

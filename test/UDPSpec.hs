@@ -70,6 +70,51 @@ spec = do
                     expectationFailure $ "the server threw: " ++ show e
                 Nothing -> expectationFailure "the server did not stop"
 
+        it "kills its handlers once the grace has passed" $ limited $ do
+            told <- newEmptyMVar
+            done <- newEmptyMVar
+            serving <- newEmptyMVar
+            killed <- newEmptyMVar
+            port <- freeUDPPort
+            let set =
+                    defaultServerSettings
+                        { settingsInstallShutdownHandler = putMVar told
+                        , settingsGracefulShutdownTimeout = Just 1
+                        }
+            void $
+                forkFinally
+                    (runUDPServerForkWithSettings set [loopback] port $ \s _ -> blocking serving killed s)
+                    (putMVar done)
+            stop <- takeMVar told
+            void $ forkIO $ void $ udpRequest loopback port "hello"
+            takeMVar serving
+            stop
+            (r, ms) <- elapsed $ timeout 3000000 $ takeMVar done
+            fmap (either (Left . show) Right) r `shouldBe` Just (Right ())
+            ms `shouldSatisfy` (>= 900)
+            isJust <$> timeout 1000000 (takeMVar killed) `shouldReturn` True
+
+        it "kills its handlers and stops its loops when killed" $ limited $ do
+            ok <- hasIPv6
+            if not ok
+                then pendingWith "no IPv6 on this machine"
+                else do
+                    serving <- newEmptyMVar
+                    killed <- newEmptyMVar
+                    port <- freeUDPPort
+                    tid <-
+                        forkIO $
+                            runUDPServerFork [loopback, "::1"] port $
+                                \s _ -> blocking serving killed s
+                    void $ forkIO $ void $ udpRequest loopback port "hello"
+                    takeMVar serving
+                    killThread tid
+                    isJust <$> timeout 1000000 (takeMVar killed) `shouldReturn` True
+                    -- The loop for the other host has let go of its port.
+                    threadDelay 100000
+                    addr <- resolve Datagram (Just "::1") port [AI_PASSIVE] NE.head
+                    E.bracket (openServerSocket addr) close $ \_ -> return ()
+
         it "returns at once when no host is given" $ limited $ do
             r <- timeout 1000000 $ runUDPServerFork [] "0" $ \_ _ -> return ()
             r `shouldBe` Just ()

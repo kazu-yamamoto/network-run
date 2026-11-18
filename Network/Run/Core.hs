@@ -24,6 +24,7 @@ module Network.Run.Core (
     Connections,
     newConnections,
     waitConnections,
+    stopConnectionsAfter,
     forkWith,
     forkConnection,
     forkDatagram,
@@ -39,7 +40,8 @@ import Data.List.NonEmpty (NonEmpty)
 import Foreign.C.Types (CInt)
 import GHC.Conc.Sync
 import Network.Socket
-import System.IO.Error (ioeGetErrorType, isFullError)
+import System.IO.Error (isFullError)
+import qualified System.ThreadManager as T
 
 resolve
     :: SocketType
@@ -229,13 +231,22 @@ data ServerSettings = ServerSettings
     --
     -- __The server returns once the connections it is serving are
     -- done.__  Stopping ends the accepting, not the handlers: they have
-    -- to end on their own, and a caller which cannot wait for them puts
-    -- a limit around the server.  A server stopped by an asynchronous
-    -- exception does not wait.
+    -- to end on their own, or are killed once
+    -- 'settingsGracefulShutdownTimeout' has passed.  A server stopped by
+    -- an asynchronous exception kills them and does not wait.
     --
     -- This is installed once per server, and a TCP and a UDP server
     -- share nothing but these settings, so running both with one
     -- 'ServerSettings' installs it twice.
+    , settingsGracefulShutdownTimeout :: Maybe Int
+    -- ^ Seconds a server told to stop waits for its connections before
+    -- killing the ones still there.  'Nothing', the default, waits
+    -- until they are done.
+    --
+    -- A server stopped by an asynchronous exception kills its
+    -- connections at once, whatever this is.
+    --
+    -- @since 0.9.0
     }
 
 -- | Default settings.  'settingsOnException' does nothing, so the
@@ -248,6 +259,7 @@ defaultServerSettings =
         , settingsUnsafeClose = False
         , settingsAcceptRetryDelay = 100000
         , settingsInstallShutdownHandler = const $ return ()
+        , settingsGracefulShutdownTimeout = Nothing
         }
 
 -- | Calling 'settingsOnException', never letting it throw.  A hook
@@ -355,14 +367,25 @@ safeAcceptWith set@ServerSettings{..} accept' = loop
 ----------------------------------------------------------------
 
 -- | The threads a server has forked and which have not finished.
-newtype Connections = Connections (TVar Int)
+newtype Connections = Connections T.ThreadManager
 
 newConnections :: IO Connections
-newConnections = Connections <$> newTVarIO 0
+newConnections = Connections <$> T.newThreadManager
 
 -- | Waiting until every thread forked has finished.
 waitConnections :: Connections -> IO ()
-waitConnections (Connections var) = atomically $ readTVar var >>= check . (== 0)
+waitConnections (Connections mgr) = T.waitUntilAllGone mgr
+
+-- | Running a server, then waiting for its connections as the settings
+-- say.  Whatever is left after that, or after an exception, is killed:
+-- a connection runs the caller's handler, which only it can stop.
+stopConnectionsAfter :: ServerSettings -> Connections -> IO a -> IO a
+stopConnectionsAfter set (Connections mgr) action =
+    T.stopAfter mgr (action <* waiting) $ \_ -> return ()
+  where
+    waiting = case settingsGracefulShutdownTimeout set of
+        Nothing -> T.waitUntilAllGone mgr
+        Just sec -> void $ T.waitUntilAllGoneFor mgr $ sec * 1000000
 
 -- | Forking a thread for an accepted socket.  An exception which
 -- escapes the action is reported, and the socket is closed by the
@@ -376,17 +399,17 @@ forkWith
     -> SockAddr
     -> IO a
     -> IO ()
-forkWith set (Connections var) closer sock peer action = E.mask $ \restore -> do
-    atomically $ modifyTVar' var (+ 1)
-    void (forkIO $ E.try (restore action) >>= finish) `E.onException` done
+forkWith set (Connections mgr) closer sock peer action =
+    -- The closer runs even for a thread forked as the server stops,
+    -- whose action does not run.
+    T.forkManagedUnmaskFinally mgr "connection" body closing
   where
-    -- The socket must be closed even if the hook throws, which it does
-    -- when an asynchronous exception arrives while it is running.
-    finish er = (reporting er `E.finally` closing) `E.finally` done
-    done = atomically $ modifyTVar' var (subtract 1)
+    body restore = E.try (restore action) >>= reporting
 
     reporting (Right _) = return ()
-    reporting (Left se) = report set (Just peer) se
+    reporting (Left se)
+        | Just T.KilledByThreadManager{} <- E.fromException se = return ()
+        | otherwise = report set (Just peer) se
 
     closing = closer sock `E.catch` onCloseError
 

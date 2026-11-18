@@ -54,7 +54,7 @@ runUDPServerFork = runUDPServerForkWithSettings defaultServerSettings
 
 -- | 'runUDPServerFork' with the given settings.  Once stopped, it
 --   returns when the loops of all the hosts and the threads they forked
---   are done.
+--   are done, or once 'settingsGracefulShutdownTimeout' has passed.
 runUDPServerForkWithSettings
     :: ServerSettings
     -> [HostName]
@@ -68,14 +68,17 @@ runUDPServerForkWithSettings set (h : hs) port server = do
     stopping <- newTVarIO False
     settingsInstallShutdownHandler set $ atomically $ writeTVar stopping True
     conns <- newConnections
-    dones <- forM hs $ \host -> do
-        done <- newEmptyMVar
-        -- What escapes is left to the thread, as before, to be printed.
-        _ <- forkIO $ run stopping conns host `E.finally` putMVar done ()
-        return done
-    run stopping conns h
-    mapM_ takeMVar dones
-    waitConnections conns
+    -- On an exception the loops are told to stop, as by the shutdown
+    -- action, before the threads they forked are killed.
+    stopConnectionsAfter set conns $
+        (`E.onException` atomically (writeTVar stopping True)) $ do
+            dones <- forM hs $ \host -> do
+                done <- newEmptyMVar
+                -- What escapes is left to the thread, as before, to be printed.
+                _ <- forkIO $ run stopping conns host `E.finally` putMVar done ()
+                return done
+            run stopping conns h
+            mapM_ takeMVar dones
   where
     run stopping conns host = do
         labelMe $ "UDP server for " ++ host
