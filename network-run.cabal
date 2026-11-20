@@ -49,6 +49,9 @@ executable tcp-client
     if !flag(examples)
         buildable: False
 
+    if os(windows)
+        ghc-options: -with-rtsopts=--io-manager=native
+
 executable tcp-server
     main-is:          tcpServer.hs
     hs-source-dirs:   examples
@@ -62,6 +65,9 @@ executable tcp-server
 
     if !flag(examples)
         buildable: False
+
+    if os(windows)
+        ghc-options: -with-rtsopts=--io-manager=native
 
 executable udp-client
     main-is:          udpClient.hs
@@ -77,6 +83,9 @@ executable udp-client
     if !flag(examples)
         buildable: False
 
+    if os(windows)
+        ghc-options: -with-rtsopts=--io-manager=native
+
 executable udp-server
     main-is:          udpServer.hs
     hs-source-dirs:   examples
@@ -90,6 +99,9 @@ executable udp-server
 
     if !flag(examples)
         buildable: False
+
+    if os(windows)
+        ghc-options: -with-rtsopts=--io-manager=native
 
 test-suite spec
     type:             exitcode-stdio-1.0
@@ -118,3 +130,6 @@ test-suite spec
         stm >=2.5 && <2.6,
         time-manager >=0.5.3 && <0.6,
         network-run
+
+    if os(windows)
+        ghc-options: "-with-rtsopts=-N --io-manager=native"
