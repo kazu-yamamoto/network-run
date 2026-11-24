@@ -30,7 +30,9 @@ spec = do
             let server _ _ sock = do
                     threadDelay 8000000
                     sendAll sock "late"
-            withTimeoutServer defaultServerSettings 1 server $ \port ->
+                -- Graceful, or the unread "hello" makes the close a reset.
+                set = defaultServerSettings{settingsClose = \s -> gracefulClose s 500}
+            withTimeoutServer set 1 server $ \port ->
                 client port $ \sock -> do
                     sendAll sock "hello"
                     (bs, ms) <- elapsed $ recv sock 1024

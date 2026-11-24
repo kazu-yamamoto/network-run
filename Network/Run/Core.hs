@@ -212,8 +212,8 @@ labelMe name = do
 
 -- | Settings for servers.
 --
--- Fields which do not apply to a given server (for instance the
--- graceful close timeout for a UDP server) are ignored.
+-- Fields which do not apply to a given server (for instance
+-- 'settingsClose' for a UDP server) are ignored.
 data ServerSettings = ServerSettings
     { settingsOnException :: Maybe SockAddr -> E.SomeException -> IO ()
     -- ^ Called when an exception is caught by the library instead of
@@ -221,17 +221,25 @@ data ServerSettings = ServerSettings
     -- exception can be attributed to one.  Exceptions thrown by this
     -- action itself are discarded, so it must not be relied on for
     -- anything but reporting.  The default does nothing.
-    , settingsGracefulCloseTimeout :: Int
-    -- ^ Milliseconds 'gracefulClose' waits for the peer's FIN after a
-    -- connection handler returns.  Zero or less uses 'close' instead,
-    -- which releases the file descriptor immediately.  The default is
-    -- 5000.
-    , settingsUnsafeClose :: Bool
-    -- ^ Closing a connected socket with 'unsafeGracefulClose' or
-    -- 'unsafeClose', which skip the IO manager that 'close' goes through
-    -- to tell a thread waiting on the socket.  Set this only when the
-    -- connection handler leaves no thread and no registered wait on the
-    -- socket by the time it returns.  The default is 'False'.
+    , settingsClose :: Socket -> IO ()
+    -- ^ Closing the socket of a connection whose handler has returned
+    -- without closing it.  The default, 'unsafeClose', closes it at once
+    -- without telling the IO manager: a handler which leaves a thread
+    -- waiting on the socket needs 'close' or 'gracefulClose' instead.
+    --
+    -- A server which closes first while its peer may still be sending,
+    -- an HTTP\/2 one for instance, should close gracefully, say with
+    -- @\\s -> 'unsafeGracefulClose' s 5000@: what arrives after a plain
+    -- close is answered with a reset, which makes the peer discard what
+    -- it has not read yet, such as a GOAWAY.  A closer can also give up
+    -- on an event of its own, through @gracefulCloseWith@ of network 4.0.
+    --
+    -- A handler which knows better, for instance after a TLS handshake
+    -- has chosen the protocol, closes the socket itself, and this is not
+    -- called.  The socket is closed with 'close' afterwards in any case.
+    -- UDP servers do not use this.
+    --
+    -- @since 0.9.0
     , settingsAcceptRetryDelay :: Int
     -- ^ Microseconds to wait before retrying 'accept' after running
     -- out of file descriptors.  The default is 100000.
@@ -270,8 +278,7 @@ defaultServerSettings :: ServerSettings
 defaultServerSettings =
     ServerSettings
         { settingsOnException = \_ _ -> return ()
-        , settingsGracefulCloseTimeout = 5000
-        , settingsUnsafeClose = False
+        , settingsClose = unsafeClose
         , settingsAcceptRetryDelay = 100000
         , settingsInstallShutdownHandler = const $ return ()
         , settingsGracefulShutdownTimeout = Nothing
@@ -288,15 +295,12 @@ report ServerSettings{..} mpeer se =
         | Just (E.SomeAsyncException _) <- E.fromException e = E.throwIO e
         | otherwise = return ()
 
--- | Closing a connected socket according to the settings.
+-- | Closing a connected socket with 'settingsClose', unless the handler
+--   has closed it, and then with 'close' whatever the closer did.
 gcloseWith :: ServerSettings -> Socket -> IO ()
-gcloseWith ServerSettings{..} sock
-    | settingsGracefulCloseTimeout <= 0 = closer sock
-    | otherwise = gracefulCloser sock settingsGracefulCloseTimeout
-  where
-    (closer, gracefulCloser)
-        | settingsUnsafeClose = (unsafeClose, unsafeGracefulClose)
-        | otherwise = (close, gracefulClose)
+gcloseWith ServerSettings{..} sock = do
+    fd <- withFdSocket sock return
+    when (fd >= 0) (settingsClose sock) `E.finally` close sock
 
 ----------------------------------------------------------------
 

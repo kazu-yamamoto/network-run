@@ -155,19 +155,34 @@ spec = do
                 _ -> expectationFailure $ "unexpected reports: " ++ show reports
 
     describe "gcloseWith" $ do
-        it "waits for the FIN of the peer if the timeout is positive" $
+        it "waits for the FIN of the peer with a graceful closer" $
             limited $
                 withHeldConnection $ \sock -> do
-                    let set = defaultServerSettings{settingsGracefulCloseTimeout = 500}
+                    let set = defaultServerSettings{settingsClose = \s -> gracefulClose s 500}
                     (_, ms) <- elapsed $ gcloseWith set sock
                     ms `shouldSatisfy` (>= 300)
 
-        it "closes at once if the timeout is not positive" $
+        it "closes at once by default" $
             limited $
                 withHeldConnection $ \sock -> do
-                    let set = defaultServerSettings{settingsGracefulCloseTimeout = 0}
-                    (_, ms) <- elapsed $ gcloseWith set sock
+                    (_, ms) <- elapsed $ gcloseWith defaultServerSettings sock
                     ms `shouldSatisfy` (< 300)
+
+        it "does not call the closer on a socket the handler has closed" $
+            limited $
+                withHeldConnection $ \sock -> do
+                    called <- newIORef False
+                    let set = defaultServerSettings{settingsClose = \_ -> writeIORef called True}
+                    close sock
+                    gcloseWith set sock
+                    readIORef called `shouldReturn` False
+
+        it "closes the socket after a closer which does not" $
+            limited $
+                withHeldConnection $ \sock -> do
+                    let set = defaultServerSettings{settingsClose = \_ -> return ()}
+                    gcloseWith set sock
+                    withFdSocket sock return `shouldReturn` (-1)
 
 ----------------------------------------------------------------
 
