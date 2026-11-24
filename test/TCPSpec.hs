@@ -213,11 +213,11 @@ spec = do
                         echoOn served port `shouldReturn` "hello"
                         echoOn unserved port `shouldThrow` anyIOException
 
-        it "drains a connection when the graceful close timeout is positive" $ limited $ do
+        it "drains a connection with a graceful closer" $ limited $ do
             -- The handler returns while the request it never read is
             -- still queued.  'gracefulClose' sends FIN and drains it.
             gate <- newEmptyMVar
-            let set = defaultServerSettings{settingsGracefulCloseTimeout = 500}
+            let set = defaultServerSettings{settingsClose = \s -> gracefulClose s 500}
             withTCPServer set (\_ -> takeMVar gate) $ \port ->
                 client port $ \sock -> do
                     sendAll sock "hello"
@@ -225,21 +225,20 @@ spec = do
                     putMVar gate ()
                     recv sock 1024 `shouldReturn` ""
 
-        it "resets a connection when the graceful close timeout is not positive" $ limited $ do
-            -- The same, with 'close' instead: unread data in the queue
+        it "resets a connection by default" $ limited $ do
+            -- The same, with 'unsafeClose': unread data in the queue
             -- makes the kernel answer with RST.
             gate <- newEmptyMVar
-            let set = defaultServerSettings{settingsGracefulCloseTimeout = 0}
-            withTCPServer set (\_ -> takeMVar gate) $ \port ->
+            withTCPServer defaultServerSettings (\_ -> takeMVar gate) $ \port ->
                 client port $ \sock -> do
                     sendAll sock "hello"
                     threadDelay 200000
                     putMVar gate ()
                     recv sock 1024 `shouldThrow` anyIOException
 
-        it "drains a connection with unsafeGracefulClose when asked to" $ limited $ do
+        it "drains a connection with unsafeGracefulClose" $ limited $ do
             gate <- newEmptyMVar
-            let set = defaultServerSettings{settingsGracefulCloseTimeout = 500, settingsUnsafeClose = True}
+            let set = defaultServerSettings{settingsClose = \s -> unsafeGracefulClose s 500}
             withTCPServer set (\_ -> takeMVar gate) $ \port ->
                 client port $ \sock -> do
                     sendAll sock "hello"
@@ -247,15 +246,26 @@ spec = do
                     putMVar gate ()
                     recv sock 1024 `shouldReturn` ""
 
-        it "resets a connection with unsafeClose when asked to" $ limited $ do
+        it "resets a connection with close" $ limited $ do
             gate <- newEmptyMVar
-            let set = defaultServerSettings{settingsGracefulCloseTimeout = 0, settingsUnsafeClose = True}
+            let set = defaultServerSettings{settingsClose = close}
             withTCPServer set (\_ -> takeMVar gate) $ \port ->
                 client port $ \sock -> do
                     sendAll sock "hello"
                     threadDelay 200000
                     putMVar gate ()
                     recv sock 1024 `shouldThrow` anyIOException
+
+        it "leaves a socket its handler has closed gracefully" $ limited $ do
+            -- The default would reset it; the handler's own close stands.
+            gate <- newEmptyMVar
+            let handler s = takeMVar gate >> gracefulClose s 500
+            withTCPServer defaultServerSettings handler $ \port ->
+                client port $ \sock -> do
+                    sendAll sock "hello"
+                    threadDelay 200000
+                    putMVar gate ()
+                    recv sock 1024 `shouldReturn` ""
 
         it "serves many connections concurrently" $
             limited $
