@@ -47,7 +47,7 @@ spec = do
             let set = set0{settingsAcceptRetryDelay = 5000000}
             stop <- registerDelay 100000
             withFakeAccept [emfile] $ \(accept', count) -> do
-                (_, ms) <- elapsed $ safeAcceptStopping set (readTVar stop >>= check) accept'
+                (_, ms) <- elapsed $ safeAcceptStopping set accept' (readTVar stop >>= check)
                 count `shouldReturn` 2
                 ms `shouldSatisfy` (< 1000)
 
