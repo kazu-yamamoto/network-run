@@ -339,7 +339,7 @@ makeListener set@ServerSettings{..} sock = do
     accepting stopping =
         closedAsStopped $
             either (const Nothing) Just
-                <$> safeAcceptStopping set (told stopping) (acceptWith sock $ told stopping)
+                <$> safeAcceptStopping set (acceptWith sock $ told stopping) (told stopping)
     told stopping = check =<< readTVar stopping
 
 ----------------------------------------------------------------
@@ -368,12 +368,12 @@ safeAccept set sock = safeAcceptWith set $ accept sock
 -- error paths described above cannot be provoked on a real listening
 -- socket, so the test suite reaches them through this.
 safeAcceptWith :: ServerSettings -> IO a -> IO a
-safeAcceptWith set = safeAcceptStopping set retry
+safeAcceptWith set accept' = safeAcceptStopping set accept' retry
 
 -- | 'safeAcceptWith' whose wait before a retry also ends once the 'STM'
 --   action succeeds, so that a server told to stop is not held by it.
-safeAcceptStopping :: ServerSettings -> STM () -> IO a -> IO a
-safeAcceptStopping set@ServerSettings{..} stop accept' = loop
+safeAcceptStopping :: ServerSettings -> IO a -> STM () -> IO a
+safeAcceptStopping set@ServerSettings{..} accept' stop = loop
   where
     loop = do
         ex <- E.try accept'
