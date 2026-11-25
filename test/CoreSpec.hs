@@ -8,6 +8,7 @@
 module CoreSpec (spec) where
 
 import Control.Concurrent
+import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Control.Monad (void)
 import Data.IORef
@@ -39,6 +40,16 @@ spec = do
                 ms `shouldSatisfy` (>= 90)
                 reports <- getReports
                 map fst reports `shouldBe` [Nothing, Nothing]
+
+        it "stops waiting to retry once told to stop" $ limited $ do
+            (set0, _) <- collecting
+            -- A delay which would be obvious if it were taken.
+            let set = set0{settingsAcceptRetryDelay = 5000000}
+            stop <- registerDelay 100000
+            withFakeAccept [emfile] $ \(accept', count) -> do
+                (_, ms) <- elapsed $ safeAcceptStopping set (readTVar stop >>= check) accept'
+                count `shouldReturn` 2
+                ms `shouldSatisfy` (< 1000)
 
         it "retries EINTR at once, without reporting it" $ limited $ do
             (set0, getReports) <- collecting

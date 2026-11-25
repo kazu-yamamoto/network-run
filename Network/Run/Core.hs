@@ -17,6 +17,7 @@ module Network.Run.Core (
     labelMe,
     safeAccept,
     safeAcceptWith,
+    safeAcceptStopping,
     Listener (..),
     makeListener,
     ServerSettings (..),
@@ -237,7 +238,9 @@ data ServerSettings = ServerSettings
     -- A handler which knows better, for instance after a TLS handshake
     -- has chosen the protocol, closes the socket itself, and this is not
     -- called.  The socket is closed with 'close' afterwards in any case.
-    -- UDP servers do not use this.
+    -- UDP servers do not use this.  A closer, or a handler, which is to
+    -- give up once the server is told to stop can learn of it by wrapping
+    -- 'settingsInstallShutdownHandler' to set a 'TVar' of its own.
     --
     -- @since 0.9.0
     , settingsAcceptRetryDelay :: Int
@@ -336,7 +339,7 @@ makeListener set@ServerSettings{..} sock = do
     accepting stopping =
         closedAsStopped $
             either (const Nothing) Just
-                <$> safeAcceptWith set (acceptWith sock $ told stopping)
+                <$> safeAcceptStopping set (told stopping) (acceptWith sock $ told stopping)
     told stopping = check =<< readTVar stopping
 
 ----------------------------------------------------------------
@@ -365,7 +368,12 @@ safeAccept set sock = safeAcceptWith set $ accept sock
 -- error paths described above cannot be provoked on a real listening
 -- socket, so the test suite reaches them through this.
 safeAcceptWith :: ServerSettings -> IO a -> IO a
-safeAcceptWith set@ServerSettings{..} accept' = loop
+safeAcceptWith set = safeAcceptStopping set retry
+
+-- | 'safeAcceptWith' whose wait before a retry also ends once the 'STM'
+--   action succeeds, so that a server told to stop is not held by it.
+safeAcceptStopping :: ServerSettings -> STM () -> IO a -> IO a
+safeAcceptStopping set@ServerSettings{..} stop accept' = loop
   where
     loop = do
         ex <- E.try accept'
@@ -377,11 +385,17 @@ safeAcceptWith set@ServerSettings{..} accept' = loop
                 -- readable.
                 | isFullError e -> do
                     report set Nothing $ E.toException e
-                    threadDelay settingsAcceptRetryDelay
+                    pause
                     loop
                 -- One connection's failure, which costs nothing to retry.
                 | isTransientAcceptError e -> loop
                 | otherwise -> E.throwIO e
+    -- registerDelay needs -threaded.
+    pause
+        | rtsSupportsBoundThreads = do
+            late <- registerDelay settingsAcceptRetryDelay
+            atomically $ (readTVar late >>= check) `orElse` stop
+        | otherwise = threadDelay settingsAcceptRetryDelay
 
 ----------------------------------------------------------------
 

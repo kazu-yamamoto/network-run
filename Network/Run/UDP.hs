@@ -70,15 +70,16 @@ runUDPServerForkWithSettings set (h : hs) port server = do
     conns <- newConnections
     -- On an exception the loops are told to stop, as by the shutdown
     -- action, before the threads they forked are killed.
-    stopConnectionsAfter set conns $
-        (`E.onException` atomically (writeTVar stopping True)) $ do
-            dones <- forM hs $ \host -> do
-                done <- newEmptyMVar
-                -- What escapes is left to the thread, as before, to be printed.
-                _ <- forkIO $ run stopping conns host `E.finally` putMVar done ()
-                return done
-            run stopping conns h
-            mapM_ takeMVar dones
+    stopConnectionsAfter set conns $ do
+        dones <- forM hs $ \host -> do
+            done <- newEmptyMVar
+            -- What escapes is left to the thread, as before, to be printed.
+            _ <- forkIO $ run stopping conns host `E.finally` putMVar done ()
+            return done
+        -- The other loops are waited for in any case: told to stop, they
+        -- end, and their sockets are closed before this returns.
+        (run stopping conns h `E.onException` atomically (writeTVar stopping True))
+            `E.finally` mapM_ takeMVar dones
   where
     run stopping conns host = do
         labelMe $ "UDP server for " ++ host
