@@ -37,7 +37,8 @@ import Control.Arrow hiding (loop)
 import Control.Concurrent
 import Control.Concurrent.STM
 import qualified Control.Exception as E
-import Control.Monad (void, when)
+import Control.Monad (forM_, void, when)
+import Data.Either (isRight)
 import Data.List.NonEmpty (NonEmpty)
 import Foreign.C.Types (CInt)
 import GHC.Conc.Sync
@@ -258,8 +259,9 @@ data ServerSettings = ServerSettings
     -- __The server returns once the connections it is serving are
     -- done.__  Stopping ends the accepting, not the handlers: they have
     -- to end on their own, or are killed once
-    -- 'settingsGracefulShutdownTimeout' has passed.  A server stopped by
-    -- an asynchronous exception kills them and does not wait.
+    -- 'settingsGracefulShutdownTimeout' has passed, and then waited for
+    -- as long again to unwind.  A server stopped by an asynchronous
+    -- exception kills them and does not wait.
     --
     -- This is installed once per server, and a TCP and a UDP server
     -- share nothing but these settings, so running both with one
@@ -411,14 +413,19 @@ waitConnections (Connections mgr) = T.waitUntilAllGone mgr
 
 -- | Running a server, then waiting for its connections as the settings
 -- say.  Whatever is left after that, or after an exception, is killed:
--- a connection runs the caller's handler, which only it can stop.
+-- a connection runs the caller's handler, which only it can stop.  The
+-- killed ones are given the same timeout again to unwind and close.
 stopConnectionsAfter :: ServerSettings -> Connections -> IO a -> IO a
 stopConnectionsAfter set (Connections mgr) action =
-    T.stopAfter mgr (action <* waiting) $ \_ -> return ()
+    T.stopAfterWithResult mgr (action <* waiting) $ \r -> do
+        when (isRight r) unwinding
+        either E.throwIO return r
   where
     waiting = case settingsGracefulShutdownTimeout set of
         Nothing -> T.waitUntilAllGone mgr
         Just sec -> void $ T.waitUntilAllGoneFor mgr $ sec * 1000000
+    unwinding = forM_ (settingsGracefulShutdownTimeout set) $ \sec ->
+        void $ T.waitUntilAllGoneFor mgr $ sec * 1000000
 
 -- | Forking a thread for an accepted socket.  An exception which
 -- escapes the action is reported, and the socket is closed by the
